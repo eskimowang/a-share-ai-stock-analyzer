@@ -34,6 +34,44 @@ def _push(level: str, title: str, markdown: str, short: str = ""):
     return None
 
 
+def _rt_trade_date(rt: dict) -> str:
+    ts = str((rt or {}).get("timestamp") or "")
+    if len(ts) >= 8 and ts[:8].isdigit():
+        return f"{ts[:4]}-{ts[4:6]}-{ts[6:8]}"
+    return ""
+
+
+def _rt_time_label(rt: dict) -> str:
+    ts = str((rt or {}).get("timestamp") or "")
+    if len(ts) >= 14 and ts[:14].isdigit():
+        return f"{ts[8:10]}:{ts[10:12]}"
+    return "实时"
+
+
+def _is_realtime_snapshot_fresh(rt: dict, today: str | None = None) -> bool:
+    if not rt or rt.get("price") is None or rt.get("change_pct") is None:
+        return False
+    today = today or datetime.now().strftime("%Y-%m-%d")
+    rt_date = _rt_trade_date(rt)
+    # Tencent snapshots include a timestamp; stale pre-open data must not trigger intraday alerts.
+    if rt.get("_source") == "tencent" and rt_date != today:
+        return False
+    return True
+
+
+def _is_continuous_auction_now(now: datetime | None = None) -> bool:
+    now = now or datetime.now()
+    minutes = now.hour * 60 + now.minute
+    return (9 * 60 + 30 <= minutes <= 11 * 60 + 30) or (13 * 60 <= minutes <= 15 * 60)
+
+
+def _fmt_price(value) -> str:
+    try:
+        return f"{float(value):.2f}"
+    except Exception:
+        return "-"
+
+
 # ========== 国际/政治消息采集 ==========
 def _collect_overnight_world_news(positions: list[dict]) -> str:
     """Codex 联网采集昨夜国际 + 政治面大事，并对每只持仓给相关度打分。"""
@@ -255,7 +293,11 @@ def job_premarket():
 def job_midday():
     log.info("[午盘小结] 开始")
     try:
-        # 简化：只看持仓的上午涨跌幅
+        from ..data_sources import UnifiedDataSource
+        from ..config import CONFIG
+
+        today = datetime.now().strftime("%Y-%m-%d")
+        ds = UnifiedDataSource(tushare_token=CONFIG["data_sources"]["tushare"].get("token"))
         positions = query_all("""
             SELECT p.stock_code, p.stock_name,
             SUM(CASE WHEN t.trade_type='buy' THEN t.quantity ELSE -t.quantity END) as qty
@@ -263,30 +305,55 @@ def job_midday():
             WHERE p.status='holding' GROUP BY p.id
         """)
         lines = []
+        has_alert = False
+        realtime_count = 0
+        stale_count = 0
+
         for p in positions:
+            code = p["stock_code"]
+            name = p["stock_name"]
+            rt = {}
+            try:
+                rt = ds.get_realtime(code) or {}
+            except Exception as e:
+                log.warning("[午盘小结] realtime fail %s: %s", code, e)
+
+            if _is_realtime_snapshot_fresh(rt, today=today):
+                realtime_count += 1
+                pct = float(rt.get("change_pct") or 0)
+                price = rt.get("price")
+                icon = "🟢" if pct > 1 else ("🔴" if pct < -1 else "⚪")
+                time_label = _rt_time_label(rt)
+                lines.append(
+                    f"{icon} {code} {name}: {pct:+.2f}%"
+                    f"（现价 {_fmt_price(price)}，{time_label}）"
+                )
+                if abs(pct) > 3:
+                    has_alert = True
+                continue
+
+            stale_count += 1
             snap = query_one(
-                "SELECT close, change_pct FROM daily_quotes WHERE stock_code=? "
-                "ORDER BY trade_date DESC LIMIT 1", (p["stock_code"],)
+                "SELECT trade_date, close, change_pct FROM daily_quotes WHERE stock_code=? "
+                "ORDER BY trade_date DESC LIMIT 1", (code,)
             ) or {}
             pct = snap.get("change_pct") or 0
-            icon = "🟢" if pct > 1 else ("🔴" if pct < -1 else "⚪")
-            lines.append(f"{icon} {p['stock_code']} {p['stock_name']}: {pct:+.2f}%")
-
-        content = "## 午盘小结 11:30\n\n" + "\n".join(lines) + "\n\n（无重大异动则降级为站内信，不推送）"
-
-        # 默认只站内，除非有异动 > ±3%
-        has_alert = False
-        for p in positions:
-            snap = query_one(
-                "SELECT change_pct FROM daily_quotes WHERE stock_code=? "
-                "ORDER BY trade_date DESC LIMIT 1", (p["stock_code"],)
+            td = str(snap.get("trade_date") or "")[:10]
+            lines.append(
+                f"⚪ {code} {name}: 实时失败"
+                f"（昨收 {_fmt_price(snap.get('close'))}，{td} {float(pct or 0):+.2f}%）"
             )
-            if snap and abs(snap.get("change_pct") or 0) > 3:
-                has_alert = True
-                break
 
-        _push("🟡" if has_alert else "🔵", "午盘小结", content, short="午盘持仓状态")
-        log.info("[午盘小结] 完成")
+        content = (
+            "## 午盘小结 11:30（实时快照）\n\n"
+            + "\n".join(lines)
+            + "\n\n"
+            + f"数据说明：实时 {realtime_count} 只；实时失败/过期 {stale_count} 只。"
+            + "\n只有当**当日实时涨跌幅**超过 ±3% 时才升级推送。"
+        )
+
+        _push("🟡" if has_alert else "🔵", "午盘小结", content, short="午盘实时持仓状态")
+        log.info("[午盘小结] 完成 realtime=%s stale=%s", realtime_count, stale_count)
     except Exception as e:
         log.exception(f"午盘小结失败: {e}")
 
@@ -616,6 +683,24 @@ def job_closing():
 
 
 # ========== 任务 4：异动扫描（每 10 分钟）==========
+def _fallback_alert_advice(code: str, name: str, pct: float, rt: dict, position: dict) -> str:
+    qty = int(position.get("qty") or 0)
+    cost = (position.get("cost", 0) or 0) / qty if qty else 0
+    cur = float(rt.get("price") or 0)
+    if not cur or not qty:
+        return "实时数据不足，暂停操作，收盘后再复核。"
+    lots = max(100, ((qty // 3) // 100) * 100)
+    lots = min(lots, qty)
+    pl = ((cur - cost) / cost * 100) if cost else 0
+    if pct >= 5:
+        if pl >= 8:
+            return f"不追高；若回落跌破{cur*0.98:.2f}，先卖{lots}股锁利，收盘复核。"
+        return f"先不加仓；站稳{cur:.2f}再看，跌回{cur*0.97:.2f}先减{lots}股。"
+    if pct <= -5:
+        return f"不补仓；若跌破{cur*0.98:.2f}，先卖{lots}股控风险，尾盘再评估。"
+    return f"未达强异动阈值，围绕{cur:.2f}观察，收盘后再决策。"
+
+
 def _generate_alert_advice(code: str, name: str, pct: float, rt: dict,
                              position: dict) -> str:
     """为异动股生成 1-2 句操作建议（DeepSeek 快速版）"""
@@ -652,14 +737,19 @@ def _generate_alert_advice(code: str, name: str, pct: float, rt: dict,
         ).strip()
     except Exception as e:
         log.warning(f"advice fail for {code}: {e}")
-        return "建议观望，收盘再决策"
+        return _fallback_alert_advice(code, name, pct, rt, position)
 
 
 def job_alert_scan():
-    """扫描持仓异动：涨跌 ±5%。只对今天的数据报警，且同一只股一天只推一次。"""
+    """扫描持仓异动：仅使用当日连续竞价实时快照，避免盘前/陈旧日线误报。"""
     try:
         from ..data_sources import UnifiedDataSource
         from ..config import CONFIG
+
+        if not _is_continuous_auction_now():
+            log.info("[异动扫描] 非连续竞价时段，跳过")
+            return
+
         today = datetime.now().strftime("%Y-%m-%d")
         positions = query_all("""
             SELECT p.stock_code, p.stock_name,
@@ -678,7 +768,6 @@ def job_alert_scan():
             code = p["stock_code"]
             name = p["stock_name"]
 
-            # 查今天是否已经推过该股
             already = query_one(
                 "SELECT id FROM notifications WHERE title LIKE '%异动%' "
                 "AND content LIKE ? AND date(sent_at) = date('now')",
@@ -687,45 +776,33 @@ def job_alert_scan():
             if already:
                 continue
 
-            pct = None
-            rt_data = {}
             try:
                 rt_data = ds.get_realtime(code) or {}
-                pct = rt_data.get("change_pct")
-            except Exception:
-                pass
+            except Exception as e:
+                log.warning("[异动扫描] realtime fail %s: %s", code, e)
+                continue
 
-            if pct is None:
-                snap = query_one(
-                    "SELECT trade_date, change_pct, close FROM daily_quotes WHERE stock_code=? "
-                    "ORDER BY trade_date DESC LIMIT 1", (code,)
-                )
-                if not snap:
-                    continue
-                td = str(snap.get("trade_date", ""))[:10]
-                if td != today:
-                    continue
-                pct = snap.get("change_pct") or 0
-                rt_data = {"price": snap.get("close")}
+            if not _is_realtime_snapshot_fresh(rt_data, today=today):
+                log.info("[异动扫描] 跳过非当日实时快照 %s rt=%s", code, rt_data)
+                continue
 
+            pct = float(rt_data.get("change_pct") or 0)
             if abs(pct) < 5:
                 continue
 
-            # 生成操作建议
             advice = _generate_alert_advice(code, name, pct, rt_data, p)
             cur_price = rt_data.get("price", 0)
             alerts.append(
-                f"🔴 **{code} {name}** 异动 {pct:+.2f}%（现价 {cur_price:.2f}）\n"
+                f"🔴 **{code} {name}** 异动 {pct:+.2f}%"
+                f"（现价 {_fmt_price(cur_price)}，{_rt_time_label(rt_data)}）\n"
                 f"💡 {advice}"
             )
 
         if alerts:
             md = "\n\n".join(alerts)
-            _push("🔴", "持仓异动预警 · 带建议", md, short=f"{len(alerts)} 只异动 · 附操作建议")
+            _push("🔴", "持仓异动预警 · 带建议", md, short=f"{len(alerts)} 只实时异动 · 附操作建议")
     except Exception as e:
         log.exception(f"异动扫描失败: {e}")
-
-
 
 
 def job_stop_loss_scan():
