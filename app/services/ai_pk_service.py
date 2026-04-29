@@ -1387,11 +1387,22 @@ def run_ai_pk_intraday(force: bool = False, source: str = "scheduler") -> dict:
     try:
         _unlock_t1(trade_date)
         _refresh_position_marks(trade_date, realtime=True)
-        pool = _apply_realtime_to_pool(_candidate_pool(limit=140), max_codes=50)
-        for cfg in CONTESTANTS:
-            one = _rebalance_one(cfg, pool, trade_date, realtime=True, run_type='intraday', run_key=run_key, market_phase=phase)
-            result["contestants"].append(one)
-            result["trades_count"] += one["trades"]
+        pool = _apply_realtime_to_pool(_candidate_pool(limit=140), max_codes=10)
+        realtime_pool = [item for item in pool if item.get("_realtime_source")]
+        result["realtime_coverage"] = {
+            "checked": min(10, len(pool)),
+            "usable": len(realtime_pool),
+            "required_min": 5,
+            "rule": "盘中PK只允许使用当日实时价；覆盖不足则跳过，不能用日线价冒充盘中成交。",
+        }
+        if len(realtime_pool) < 5:
+            status = "skipped"
+            result["reason"] = "实时行情覆盖不足，已跳过盘中调仓，避免用日线价模拟成交"
+        else:
+            for cfg in CONTESTANTS:
+                one = _rebalance_one(cfg, realtime_pool, trade_date, realtime=True, run_type='intraday', run_key=run_key, market_phase=phase)
+                result["contestants"].append(one)
+                result["trades_count"] += one["trades"]
         _refresh_position_marks(trade_date, realtime=True)
         _save_snapshots(trade_date)
     except Exception as e:
