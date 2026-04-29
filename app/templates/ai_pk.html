@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"/>
+<title>AI PK 模拟盘</title>
+<script src="/vendor/tailwind.js"></script>
+<script src="https://cdn.staticfile.org/echarts/5.4.3/echarts.min.js"></script>
+<style>
+  :root {
+    --bg:#FAF7F2; --panel:#F1ECE3; --panel2:#FFFDF8; --border:rgba(120,100,70,0.15);
+    --text:#2C2A26; --muted:#6B6558; --accent:#A8734A; --rise:#B54848; --fall:#4A8060;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#1C1917; --panel:#26201C; --panel2:#211D1A; --border:rgba(190,160,120,0.16);
+      --text:#E8DFCE; --muted:#A89878; --accent:#D4A76A; --rise:#D97060; --fall:#7AAB88; }
+  }
+  html, body { margin:0; background:var(--bg); color:var(--text); font-family:"Songti SC","SimSun",serif; }
+  nav a { color:var(--muted); font-size:13px; text-decoration:none; margin-right:12px; }
+  nav a:hover, nav a.active { color:var(--accent); }
+  .panel { background:var(--panel); border:1px solid var(--border); border-radius:8px; padding:14px; }
+  .panel h2 { margin:0 0 10px; font-size:15px; color:var(--muted); font-weight:500; }
+  .rank { width:28px; height:28px; display:inline-flex; align-items:center; justify-content:center; border-radius:50%; background:var(--accent); color:#fff; font-size:13px; }
+  .metric { font-size:26px; font-weight:600; line-height:1.2; }
+  .sub { color:var(--muted); font-size:12px; }
+  .up { color:var(--rise); }
+  .down { color:var(--fall); }
+  .table { width:100%; border-collapse:collapse; font-size:12px; }
+  .table th, .table td { padding:8px 6px; border-bottom:1px solid var(--border); text-align:left; vertical-align:top; }
+  .table th { color:var(--muted); font-weight:500; }
+  .pill { display:inline-block; padding:2px 8px; border-radius:999px; border:1px solid var(--border); color:var(--muted); font-size:11px; }
+  .ref-pass { color:var(--ok); }
+  .ref-review { color:var(--accent); }
+  .ref-violation { color:var(--rise); }
+  button { border:none; background:var(--accent); color:white; border-radius:6px; padding:7px 12px; font-size:13px; cursor:pointer; }
+  button.secondary { background:transparent; color:var(--text); border:1px solid var(--border); }
+  .grid-auto { display:grid; grid-template-columns:repeat(auto-fit,minmax(260px,1fr)); gap:12px; }
+  .target { padding:8px 0; border-bottom:1px dashed var(--border); }
+  .target:last-child { border-bottom:none; }
+  @media (max-width:720px) {
+    .metric { font-size:22px; }
+    .table th:nth-child(8), .table td:nth-child(8) { display:none; }
+  }
+</style>
+</head>
+<body>
+<div class="max-w-[1280px] mx-auto p-3 md:p-5">
+  <header class="flex flex-wrap items-center justify-between gap-3 mb-4">
+    <div>
+      <h1 class="text-xl md:text-2xl font-semibold m-0">AI PK 模拟盘</h1>
+      <div class="sub" id="header-meta">加载中...</div>
+    </div>
+    <nav>
+      <a href="/dashboard">仪表盘</a>
+      <a href="/chat">聊天</a>
+      <a href="/playbook">14 手法复盘</a>
+      <a href="/interacted-stocks">交流过的股票</a>
+      <a href="/ai-pk" class="active">AI PK</a>
+    </nav>
+  </header>
+
+  <div class="panel mb-3">
+    <div class="flex flex-wrap items-center justify-between gap-3">
+      <div>
+        <h2>比赛规则</h2>
+        <div class="sub" id="rules"></div>
+        <div class="sub mt-2" id="referee-box"></div>
+      </div>
+      <div class="flex gap-2">
+        <button onclick="runIntraday(false)">盘中实时交易</button>
+        <button onclick="runPk(false)">收盘调仓</button>
+        <button class="secondary" onclick="loadPk()">重新加载</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="grid-auto mb-3" id="summary-grid"></div>
+
+  <div class="grid grid-cols-1 lg:grid-cols-2 gap-3 mb-3">
+    <div class="panel">
+      <h2>净值曲线</h2>
+      <div id="equity-chart" style="height:320px;"></div>
+    </div>
+    <div class="panel">
+      <h2>最新调仓成交</h2>
+      <div id="trades-box"></div>
+    </div>
+  </div>
+
+  <div class="grid grid-cols-1 xl:grid-cols-2 gap-3" id="detail-grid"></div>
+</div>
+
+<script>
+let state = null;
+const fmtMoney = n => n == null ? "—" : (n >= 10000 ? (n/10000).toFixed(1)+"万" : Number(n).toFixed(0));
+const fmtPct = n => n == null ? "—" : ((Number(n)*100)>=0?"+":"") + (Number(n)*100).toFixed(2) + "%";
+const clsPct = n => Number(n||0) >= 0 ? "up" : "down";
+function esc(s) {
+  return String(s ?? "").replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
+}
+
+async function loadPk() {
+  const r = await fetch("/api/ai-pk/dashboard");
+  state = await r.json();
+  render();
+}
+
+async function runPk(force) {
+  const r = await fetch("/api/ai-pk/run", {
+    method:"POST",
+    headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({force: !!force})
+  });
+  state = (await r.json()).dashboard || await (await fetch("/api/ai-pk/dashboard")).json();
+  render();
+}
+
+async function runIntraday(force) {
+  const r = await fetch("/api/ai-pk/run-intraday", {
+    method:"POST",
+    headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({force: !!force})
+  });
+  state = (await r.json()).dashboard || await (await fetch("/api/ai-pk/dashboard")).json();
+  render();
+}
+
+function render() {
+  if (!state?.success) return;
+  document.getElementById("header-meta").textContent =
+    `比赛日 ${state.trade_date} · 市场数据 ${state.latest_market_date}`;
+  const rules = state.rules || {};
+  const excludeNote = rules.exclude_user_holdings ? "候选池排除你的真实持仓，避免复制用户组合。" : "";
+  document.getElementById("rules").textContent =
+    `每人初始资金 ${fmtMoney(rules.capital_per_ai)}，A股100股整数，T+1，可用现金交易，无杠杆，买卖含佣金，卖出含印花税。${excludeNote}`;
+  const ref = state.referee || {};
+  const counts = ref.audit_counts || {};
+  document.getElementById("referee-box").innerHTML =
+    `<b>${esc(ref.display_name || "裁判")}</b>：${esc(ref.role || "规则公平审计")} · ` +
+    `最近审核 ${esc(ref.latest_audit_time || "暂无")} · ` +
+    `通过 ${counts.pass || 0} / 复核 ${counts.review || 0} / 违规 ${counts.violation || 0}`;
+  renderSummary();
+  renderChart();
+  renderTrades();
+  renderDetails();
+}
+
+function renderSummary() {
+  const box = document.getElementById("summary-grid");
+  box.innerHTML = (state.contestants || []).map(x => `
+    <div class="panel">
+      <div class="flex items-start justify-between gap-2">
+        <div>
+          <div class="sub">${esc(x.risk_profile)} · ${esc(x.contestant)}</div>
+          <div class="text-lg font-semibold">${esc(x.display_name)}</div>
+        </div>
+        <span class="rank">${x.rank_no || "—"}</span>
+      </div>
+      <div class="metric mt-2">${fmtMoney(x.total_equity)}</div>
+      <div class="sub">总收益 <span class="${clsPct(x.total_return)}">${fmtPct(x.total_return)}</span> · 今日 <span class="${clsPct(x.daily_return)}">${fmtPct(x.daily_return)}</span></div>
+      <div class="sub mt-1">现金 ${fmtMoney(x.cash)} · 持仓 ${fmtMoney(x.market_value)}</div>
+    </div>`).join("");
+}
+
+function renderChart() {
+  const chart = echarts.init(document.getElementById("equity-chart"));
+  const names = Object.keys(state.history || {});
+  const dates = Array.from(new Set(names.flatMap(n => (state.history[n]||[]).map(x => x.trade_date)))).sort();
+  chart.setOption({
+    tooltip:{trigger:"axis"},
+    legend:{top:0, textStyle:{color:getComputedStyle(document.documentElement).getPropertyValue("--muted")}},
+    grid:{left:48,right:20,top:42,bottom:32},
+    xAxis:{type:"category", data:dates},
+    yAxis:{type:"value", axisLabel:{formatter:v=>(v/10000).toFixed(0)+"万"}},
+    series:names.map(n => ({
+      name:n, type:"line", smooth:true,
+      data:dates.map(d => {
+        const row = (state.history[n]||[]).find(x => x.trade_date===d);
+        return row ? Number(row.total_equity || 0).toFixed(2) : null;
+      })
+    }))
+  });
+}
+
+function renderTrades() {
+  const rows = (state.recent_trades || []).slice(0,18);
+  if (!rows.length) {
+    document.getElementById("trades-box").innerHTML = '<div class="sub">暂无成交，等待第一次调仓。</div>';
+    return;
+  }
+  document.getElementById("trades-box").innerHTML = `
+    <table class="table">
+      <thead><tr><th>时间</th><th>AI</th><th>方向</th><th>股票</th><th>数量</th><th>价格</th><th>裁判</th><th>原因</th></tr></thead>
+      <tbody>${rows.map(t => {
+        const refCls = t.referee_status === "violation" ? "ref-violation" : (t.referee_status === "review" ? "ref-review" : "ref-pass");
+        return `
+        <tr>
+          <td>${esc(t.operation_time || t.trade_date)}<div class="sub">${esc(t.market_phase_display || t.run_type || "")}</div></td>
+          <td>${esc(t.contestant)}</td>
+          <td><span class="${t.side==='buy'?'up':'down'}">${t.side==='buy'?'买入':'卖出'}</span></td>
+          <td>${esc(t.stock_code)} ${esc(t.stock_name)}</td>
+          <td>${t.quantity}</td>
+          <td>${Number(t.price||0).toFixed(2)}</td>
+          <td><span class="${refCls}">${esc(t.referee_status_display || "通过")}</span><div class="sub">${esc(t.referee_notes || "").slice(0,36)}</div></td>
+          <td>${esc(t.reason).slice(0,70)}</td>
+        </tr>`;
+      }).join("")}</tbody>
+    </table>`;
+}
+
+function renderDetails() {
+  const grid = document.getElementById("detail-grid");
+  grid.innerHTML = (state.contestants || []).map(x => {
+    const pos = x.positions || [];
+    const targets = x.decision?.targets || [];
+    return `
+      <div class="panel">
+        <div class="flex items-start justify-between gap-2">
+          <h2>${esc(x.display_name)} · 持仓与策略</h2>
+          <span class="pill">第 ${x.rank_no || "—"} 名</span>
+        </div>
+        <div class="sub mb-2">${esc(x.strategy_profile)}</div>
+        <table class="table mb-3">
+          <thead><tr><th>股票</th><th>仓位市值</th><th>数量</th><th>成本/现价</th><th>浮盈</th></tr></thead>
+          <tbody>${pos.length ? pos.map(p => `
+            <tr>
+              <td>${esc(p.stock_code)} ${esc(p.stock_name)}</td>
+              <td>${fmtMoney(p.market_value)}</td>
+              <td>${p.quantity}</td>
+              <td>${Number(p.avg_cost||0).toFixed(2)} / ${Number(p.last_price||0).toFixed(2)}</td>
+              <td class="${clsPct((p.unrealized_pnl_pct||0)/100)}">${Number(p.unrealized_pnl_pct||0).toFixed(2)}%</td>
+            </tr>`).join("") : '<tr><td colspan="5" class="sub">暂无持仓</td></tr>'}</tbody>
+        </table>
+        <div class="sub mb-1">今日目标与理由</div>
+        <div>${targets.slice(0,5).map(t => `
+          <div class="target">
+            <div><b>${esc(t.stock_code)} ${esc(t.stock_name)}</b> <span class="pill">目标 ${(Number(t.target_weight||0)*100).toFixed(0)}%</span></div>
+            <div class="sub">${esc(t.reason)}</div>
+          </div>`).join("") || '<div class="sub">暂无目标组合</div>'}</div>
+        <div class="sub mt-3">${esc(x.decision?.review_text || "等待第一次复盘。")}</div>
+      </div>`;
+  }).join("");
+}
+
+loadPk().catch(e => {
+  document.getElementById("header-meta").textContent = "加载失败：" + e.message;
+});
+</script>
+</body>
+</html>

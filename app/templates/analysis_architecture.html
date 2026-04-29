@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>分析架构中枢</title>
+<script src="/vendor/tailwind.js"></script>
+<style>
+  :root { --bg:#f7f8fa; --panel:#fff; --line:#d9dee7; --text:#20242c; --muted:#687080; --accent:#1f6feb; --ok:#16794c; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#101216; --panel:#171a20; --line:#2b313b; --text:#e8ecf2; --muted:#98a2b3; --accent:#6aa4ff; --ok:#68c08f; }
+  }
+  body { margin:0; background:var(--bg); color:var(--text); font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Microsoft YaHei",sans-serif; }
+  .wrap { max-width:1180px; margin:0 auto; padding:18px; }
+  .panel { background:var(--panel); border:1px solid var(--line); border-radius:8px; padding:14px; }
+  nav a { color:var(--muted); text-decoration:none; margin-left:14px; font-size:13px; }
+  nav a.active, nav a:hover { color:var(--accent); }
+  .muted { color:var(--muted); }
+  .node { border-bottom:1px solid var(--line); padding:13px 0; }
+  .node:last-child { border-bottom:0; }
+  .tag { display:inline-block; border:1px solid var(--line); border-radius:999px; padding:2px 8px; font-size:12px; color:var(--muted); }
+  .flow { display:grid; grid-template-columns:repeat(1,minmax(0,1fr)); gap:8px; }
+  @media (min-width:760px){ .flow { grid-template-columns:repeat(6,minmax(0,1fr)); } }
+  .step { border:1px solid var(--line); border-radius:8px; padding:10px; min-height:72px; }
+  .step b { display:block; font-size:13px; margin-bottom:4px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="flex items-center justify-between gap-3 mb-4">
+    <div>
+      <h1 class="text-xl font-semibold m-0">分析架构中枢</h1>
+      <div class="text-xs muted">把多源数据、研报学习、互动跟踪、AI PK、风控和蒸馏存储串成一套可执行架构。</div>
+    </div>
+    <nav>
+      <a href="/chat">聊天</a>
+      <a href="/holdings">持仓变动</a>
+      <a href="/playbook">14 手法复盘</a>
+      <a href="/ai-pk">AI PK</a>
+      <a href="/trading-cognition">交易认知</a>
+      <a href="/analysis-architecture" class="active">架构</a>
+      <a href="/dashboard">仪表盘</a>
+    </nav>
+  </header>
+
+  <section class="panel mb-4">
+    <div class="flow">
+      <div class="step"><b>多源数据</b><span class="muted text-xs">Tushare / AkShare / 缓存 / 持仓</span></div>
+      <div class="step"><b>蒸馏存储</b><span class="muted text-xs">少存原文，多存信号和证据</span></div>
+      <div class="step"><b>记忆跟踪</b><span class="muted text-xs">互动股票、荐股、持仓变动</span></div>
+      <div class="step"><b>多 AI 分工</b><span class="muted text-xs">基本面、机构、博弈、政策</span></div>
+      <div class="step"><b>风控仓位</b><span class="muted text-xs">软警戒、硬止损、现金储备</span></div>
+      <div class="step"><b>反馈再分析</b><span class="muted text-xs">收益、回撤、纪律、修正</span></div>
+    </div>
+  </section>
+
+  <section class="panel mb-4">
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-3" id="summary"></div>
+  </section>
+
+  <section class="panel mb-4">
+    <div class="flex items-center justify-between gap-3 mb-3">
+      <h2 class="text-base font-semibold m-0">盈利闭环</h2>
+      <span class="muted text-xs">分析 → 决策 → 行动 → 反馈 → 再分析</span>
+    </div>
+    <div id="decision-feedback-loop" class="text-sm">加载中</div>
+  </section>
+
+  <section class="panel mb-4">
+    <div class="flex items-center justify-between gap-3 mb-3">
+      <h2 class="text-base font-semibold m-0">架构组件</h2>
+      <select id="layer" class="border rounded px-2 py-1 bg-transparent text-sm"></select>
+    </div>
+    <div id="nodes" class="text-sm">加载中</div>
+  </section>
+
+  <section class="panel">
+    <div class="flex items-center justify-between gap-3 mb-3">
+      <h2 class="text-base font-semibold m-0">GitHub 热门工具参考</h2>
+      <span class="muted text-xs">只吸收架构和能力，不复制代码</span>
+    </div>
+    <div id="open-source-tools" class="text-sm">加载中</div>
+  </section>
+</div>
+<script>
+async function loadNodes() {
+  const layer = document.getElementById("layer").value;
+  const url = "/api/analysis-architecture/components?limit=120" + (layer ? "&layer=" + encodeURIComponent(layer) : "");
+  const d = await (await fetch(url)).json();
+  const layers = d.layers || [];
+  const sel = document.getElementById("layer");
+  if (!sel.dataset.ready) {
+    sel.innerHTML = `<option value="">全部层级</option>` + layers.map(x => `<option value="${x.layer}">${x.layer} (${x.count})</option>`).join("");
+    sel.dataset.ready = "1";
+  }
+  document.getElementById("summary").innerHTML = [
+    ["组件数", d.count],
+    ["批次", d.source?.source_batch || ""],
+    ["状态", "已注入 AI"],
+    ["存储原则", "蒸馏优先"]
+  ].map(x => `<div><div class="muted text-xs">${x[0]}</div><div class="text-lg font-semibold">${x[1]}</div></div>`).join("");
+  document.getElementById("nodes").innerHTML = (d.items || []).map(n => `
+    <div class="node">
+      <div class="flex flex-wrap items-center gap-2 mb-1">
+        <span class="tag">${n.layer}</span>
+        <strong>${n.title}</strong>
+        <span class="muted">优先级 ${n.priority}</span>
+      </div>
+      <div class="mb-1">${n.design_goal || ""}</div>
+      <div class="muted">执行规则：${n.operating_rule || ""}</div>
+      <div class="muted mt-1">输入：${n.data_inputs || ""}</div>
+      <div class="muted mt-1">输出：${n.outputs || ""}</div>
+      <div class="muted mt-1">节奏：${n.cadence || ""}</div>
+      <div class="muted mt-1">存储：${n.storage_policy || ""}</div>
+    </div>
+  `).join("") || "暂无组件";
+}
+async function loadDecisionFeedbackLoop() {
+  const d = await (await fetch("/api/decision-feedback/snapshot")).json();
+  const counts = d.counts || {};
+  document.getElementById("decision-feedback-loop").innerHTML = `
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-3">
+      <div><div class="muted text-xs">分析记录</div><div class="text-lg font-semibold">${counts.analysis_records || 0}</div></div>
+      <div><div class="muted text-xs">行动/订单</div><div class="text-lg font-semibold">${(counts.executed_orders || 0)} / ${(counts.pending_orders || 0)}</div></div>
+      <div><div class="muted text-xs">AI PK 成交</div><div class="text-lg font-semibold">${counts.ai_pk_trades || 0}</div></div>
+      <div><div class="muted text-xs">反馈事件</div><div class="text-lg font-semibold">${counts.feedback_events || 0}</div></div>
+    </div>
+    <div class="muted mb-2">${d.objective || ""}</div>
+    ${(d.loop || []).map(s => `<div class="node"><b>${s.name}</b><div class="muted">${s.rule}</div></div>`).join("")}
+  `;
+}
+
+async function loadOpenSourceTools() {
+  const d = await (await fetch("/api/analysis-architecture/open-source-tools?limit=20")).json();
+  document.getElementById("open-source-tools").innerHTML = (d.items || []).map(t => `
+    <div class="node">
+      <div class="flex flex-wrap items-center gap-2 mb-1">
+        <span class="tag">${t.category}</span>
+        <strong>${t.name}</strong>
+        <span class="muted">${t.repo} · ${t.stars_text}</span>
+      </div>
+      <div class="muted mb-1">${t.repo_url}</div>
+      <div>可取之处：${t.useful_parts || ""}</div>
+      <div class="muted mt-1">落地规则：${t.adoption_rule || ""}</div>
+      <div class="muted mt-1">注意：${t.caution || ""}</div>
+    </div>
+  `).join("") || "暂无工具参考";
+}
+document.getElementById("layer").onchange = loadNodes;
+loadNodes();
+loadDecisionFeedbackLoop();
+loadOpenSourceTools();
+</script>
+</body>
+</html>

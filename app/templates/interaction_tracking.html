@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"/>
+<title>我们交流过的股票 · 股票分析</title>
+<meta name="theme-color" content="#FAF7F2"/>
+<link rel="manifest" href="/manifest.webmanifest"/>
+<link rel="apple-touch-icon" href="/apple-touch-icon.png"/>
+<style>
+:root {
+  --bg:#FAF7F2; --bg2:#F1ECE3; --panel:#FFFDF8; --border:rgba(120,100,70,0.14);
+  --text:#2C2A26; --muted:#6B6558; --accent:#A8734A; --rise:#B54848; --fall:#4A8060;
+  --warn:#9A6A24; --danger:#9B3535;
+}
+@media (prefers-color-scheme: dark) {
+  :root { --bg:#1C1917; --bg2:#26201C; --panel:#211D19; --border:rgba(190,160,120,0.15);
+          --text:#E8DFCE; --muted:#A89878; --accent:#D4A76A; --warn:#D4A76A; --danger:#D97060; }
+}
+* { box-sizing:border-box; }
+body { margin:0; background:var(--bg); color:var(--text); font-family:"Songti SC","SimSun","Noto Serif SC",serif; }
+header { padding:14px 18px; border-bottom:1px solid var(--border); background:var(--bg); }
+.wrap { max-width:1360px; margin:0 auto; }
+.top { display:flex; align-items:center; justify-content:space-between; gap:16px; }
+h1 { margin:0; font-size:20px; font-weight:600; }
+h2 { margin:18px 0 10px; font-size:15px; font-weight:600; }
+nav a { color:var(--muted); font-size:13px; text-decoration:none; margin-left:14px; }
+nav a.active, nav a:hover { color:var(--accent); }
+.sub { margin-top:4px; color:var(--muted); font-size:12px; line-height:1.6; }
+.toolbar { display:flex; gap:10px; align-items:center; justify-content:space-between; margin:18px 0 12px; flex-wrap:wrap; }
+.stats { display:flex; gap:10px; flex-wrap:wrap; }
+.stat { min-width:120px; padding:10px 12px; background:var(--bg2); border:1px solid var(--border); border-radius:8px; }
+.stat b { display:block; font-size:21px; font-family:Georgia,serif; }
+.stat span { display:block; color:var(--muted); font-size:11px; margin-top:2px; }
+button { height:34px; padding:0 14px; border-radius:7px; border:1px solid var(--border); background:var(--bg2); color:var(--text); cursor:pointer; font-family:inherit; }
+button.primary { background:var(--accent); color:white; border-color:var(--accent); }
+button:disabled { opacity:.55; cursor:wait; }
+.grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(320px, 1fr)); gap:12px; }
+.card { background:var(--panel); border:1px solid var(--border); border-radius:8px; padding:13px; min-height:220px; }
+.card-head { display:flex; align-items:flex-start; justify-content:space-between; gap:12px; }
+.name { font-size:18px; font-weight:600; }
+.code { color:var(--muted); font-size:12px; margin-top:2px; font-family:Consolas,monospace; }
+.risk { flex:0 0 auto; border-radius:999px; padding:3px 9px; font-size:12px; border:1px solid var(--border); }
+.risk.high { color:var(--danger); background:rgba(181,72,72,.10); }
+.risk.watch { color:var(--warn); background:rgba(168,115,74,.12); }
+.risk.normal { color:var(--fall); background:rgba(74,128,96,.10); }
+.quote { display:grid; grid-template-columns:repeat(3, 1fr); gap:8px; margin:12px 0; }
+.q { background:var(--bg2); border-radius:7px; padding:8px; min-height:52px; }
+.q small { display:block; color:var(--muted); font-size:11px; }
+.q strong { display:block; font-size:16px; margin-top:3px; }
+.rise { color:var(--rise); }
+.fall { color:var(--fall); }
+.analysis { border-top:1px dashed var(--border); padding-top:10px; color:var(--text); font-size:13px; line-height:1.65; }
+.patterns { margin-top:8px; color:var(--muted); font-size:12px; line-height:1.6; }
+.pattern-line { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.timeline { background:var(--panel); border:1px solid var(--border); border-radius:8px; padding:12px; }
+.timeline-item { padding:10px 0; border-bottom:1px dashed var(--border); }
+.timeline-item:last-child { border-bottom:none; }
+.timeline-title { display:flex; justify-content:space-between; gap:12px; font-size:13px; }
+.timeline-body { color:var(--muted); font-size:13px; line-height:1.65; margin-top:4px; }
+.empty { padding:28px; text-align:center; color:var(--muted); border:1px dashed var(--border); border-radius:8px; background:var(--bg2); }
+#status { color:var(--muted); font-size:12px; min-height:18px; }
+@media (max-width:680px) {
+  header { padding:12px; }
+  .top { align-items:flex-start; }
+  nav a { margin-left:8px; }
+  .grid { grid-template-columns:1fr; }
+  .stat { flex:1; min-width:96px; }
+  .timeline-title { display:block; }
+}
+</style>
+</head>
+<body>
+<header>
+  <div class="wrap top">
+    <div>
+      <h1>我们交流过的股票</h1>
+      <div class="sub">这个板块只收录你和系统在聊天里讨论过的股票；每天收盘后持续分析，留下可回看的判断轨迹。</div>
+    </div>
+    <nav>
+      <a href="/dashboard">仪表盘</a>
+      <a href="/chat">聊天</a>
+      <a href="/playbook">复盘</a>
+      <a href="/interacted-stocks" class="active">交流过的股票</a>
+    </nav>
+  </div>
+</header>
+
+<main class="wrap" style="padding:0 18px 24px;">
+  <div class="toolbar">
+    <div class="stats">
+      <div class="stat"><b id="count">0</b><span>交流过</span></div>
+      <div class="stat"><b id="high">0</b><span>高风险</span></div>
+      <div class="stat"><b id="watch">0</b><span>观察</span></div>
+      <div class="stat"><b id="analysis-count">0</b><span>持续分析记录</span></div>
+    </div>
+    <div style="display:flex;gap:8px;align-items:center;">
+      <span id="status"></span>
+      <button onclick="loadData()">刷新</button>
+      <button class="primary" onclick="runScan()">立即复盘</button>
+    </div>
+  </div>
+
+  <h2>股票池</h2>
+  <section id="grid" class="grid"></section>
+
+  <h2>持续分析记录</h2>
+  <section id="timeline" class="timeline"></section>
+</main>
+
+<script>
+const grid = document.getElementById("grid");
+const timeline = document.getElementById("timeline");
+const statusEl = document.getElementById("status");
+
+function riskText(level){
+  if(level === "high") return "高风险";
+  if(level === "watch") return "观察";
+  return "正常";
+}
+function fmtPct(v){
+  if(v === null || v === undefined || Number.isNaN(Number(v))) return "—";
+  const n = Number(v);
+  return (n > 0 ? "+" : "") + n.toFixed(2) + "%";
+}
+function clsPct(v){
+  const n = Number(v || 0);
+  return n >= 0 ? "rise" : "fall";
+}
+function fmtPrice(v){
+  if(v === null || v === undefined || Number.isNaN(Number(v))) return "—";
+  return Number(v).toFixed(2);
+}
+function escapeHtml(s){
+  return String(s || "").replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
+}
+
+function renderStocks(items){
+  document.getElementById("count").textContent = items.length;
+  document.getElementById("high").textContent = items.filter(x => x.last_risk_level === "high").length;
+  document.getElementById("watch").textContent = items.filter(x => x.last_risk_level === "watch").length;
+  if(!items.length){
+    grid.innerHTML = '<div class="empty">暂无交流过的股票。你在聊天里提到代码或股票名后，会自动出现在这里。</div>';
+    return;
+  }
+  grid.innerHTML = items.map(item => {
+    const q = item.latest_quote || {};
+    const level = item.last_risk_level || "normal";
+    const latest = item.latest_analysis || {};
+    const analysis = latest.analysis_text || "等待下一次收盘后持续分析。";
+    const patterns = (item.recent_patterns || []).slice(0, 3).map(p => (
+      `<div class="pattern-line">${escapeHtml(p.trade_date)} · ${escapeHtml(p.pattern)} ${Math.round((p.confidence || 0) * 100)}% · ${escapeHtml(p.narrative)}</div>`
+    )).join("") || '<div class="pattern-line">暂无近期手法命中</div>';
+    return `
+      <article class="card">
+        <div class="card-head">
+          <div>
+            <div class="name">${escapeHtml(item.stock_name || "")}</div>
+            <div class="code">${escapeHtml(item.stock_code)} · 交流 ${item.mention_count || 0} 次</div>
+          </div>
+          <div class="risk ${level}">${riskText(level)}</div>
+        </div>
+        <div class="quote">
+          <div class="q"><small>最新收盘</small><strong>${fmtPrice(q.close || item.last_close)}</strong></div>
+          <div class="q"><small>涨跌幅</small><strong class="${clsPct(q.change_pct || item.last_change_pct)}">${fmtPct(q.change_pct ?? item.last_change_pct)}</strong></div>
+          <div class="q"><small>数据日</small><strong style="font-size:13px;">${escapeHtml(q.trade_date || item.last_trade_date || "—")}</strong></div>
+        </div>
+        <div class="analysis">${escapeHtml(analysis)}</div>
+        <div class="patterns">${patterns}</div>
+      </article>
+    `;
+  }).join("");
+}
+
+function renderAnalysis(items){
+  document.getElementById("analysis-count").textContent = items.length;
+  if(!items.length){
+    timeline.innerHTML = '<div class="empty">暂无持续分析记录。点“立即复盘”或等待工作日 16:25 自动生成。</div>';
+    return;
+  }
+  timeline.innerHTML = items.slice(0, 30).map(x => `
+    <div class="timeline-item">
+      <div class="timeline-title">
+        <strong>${escapeHtml(x.trade_date)} · ${escapeHtml(x.stock_code)} ${escapeHtml(x.stock_name || "")}</strong>
+        <span class="risk ${escapeHtml(x.risk_level || "normal")}">${riskText(x.risk_level || "normal")}</span>
+      </div>
+      <div class="timeline-body">${escapeHtml(x.analysis_text || "")}</div>
+    </div>
+  `).join("");
+}
+
+async function loadData(){
+  statusEl.textContent = "加载中...";
+  try{
+    const [stocksRes, analysisRes] = await Promise.all([
+      fetch("/api/tracking/interaction/stocks?limit=120"),
+      fetch("/api/tracking/interaction/analysis?limit=80"),
+    ]);
+    if(!stocksRes.ok) throw new Error("股票池读取失败");
+    if(!analysisRes.ok) throw new Error("分析记录读取失败");
+    const stocks = await stocksRes.json();
+    const analysis = await analysisRes.json();
+    renderStocks(stocks.items || []);
+    renderAnalysis(analysis.items || []);
+    statusEl.textContent = "已更新";
+  }catch(e){
+    statusEl.textContent = e.message;
+  }
+}
+
+async function runScan(){
+  statusEl.textContent = "复盘中...";
+  const btns = document.querySelectorAll("button");
+  btns.forEach(b => b.disabled = true);
+  try{
+    const res = await fetch("/api/tracking/interaction/run?refresh_market_data=false", {method:"POST"});
+    if(!res.ok) throw new Error("复盘失败");
+    const data = await res.json();
+    statusEl.textContent = `复盘完成：${data.stocks_scanned || 0} 只，预警 ${data.alerts_count || 0} 条`;
+    await loadData();
+  }catch(e){
+    statusEl.textContent = e.message;
+  }finally{
+    btns.forEach(b => b.disabled = false);
+  }
+}
+
+loadData();
+if ("serviceWorker" in navigator) navigator.serviceWorker.register("/sw.js").catch(()=>{});
+</script>
+</body>
+</html>

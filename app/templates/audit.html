@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>审计流水 · 股票分析</title>
+<meta name="theme-color" content="#FAF7F2"/>
+<link rel="manifest" href="/manifest.webmanifest"/>
+<link rel="apple-touch-icon" href="/apple-touch-icon.png"/>
+<style>
+  body { background:#FAF7F2; color:#2C2A26; font-family:"Songti SC","SimSun",serif; margin:0; padding:16px; max-width:1100px; margin:0 auto; }
+  @media (prefers-color-scheme: dark) {
+    body { background:#1C1917; color:#E8DFCE; }
+    table { background:#26201C; }
+    th { background:#2F2823; }
+    tr:hover td { background:#2F2823; }
+  }
+  nav a { color:#6B6558; font-size:13px; text-decoration:none; margin-right:12px; }
+  nav a.active { color:#A8734A; }
+  table { width:100%; border-collapse:collapse; background:white; border-radius:8px; overflow:hidden; }
+  th, td { text-align:left; padding:8px 10px; border-bottom:1px solid rgba(120,100,70,0.12); font-size:13px; }
+  th { background:#F1ECE3; color:#6B6558; font-weight:500; }
+  tr:hover td { background:#F1ECE3; }
+  .badge { display:inline-block; padding:2px 8px; border-radius:10px; font-size:11px; }
+  .b-read { background:#E6F0E8; color:#4A8060; }
+  .b-write { background:#F3E6D4; color:#8B5A22; }
+  .b-destructive { background:#F7E3DE; color:#8B3939; }
+  .b-ok { color:#4A8060; }
+  .b-err { color:#B54848; }
+  .filter { margin-bottom:12px; font-size:13px; }
+  .filter button { padding:4px 10px; margin-right:4px; border:1px solid rgba(120,100,70,0.12); border-radius:6px; background:white; color:#6B6558; cursor:pointer; font-size:12px; }
+  .filter button.active { background:#A8734A; color:white; border-color:#A8734A; }
+</style>
+</head>
+<body>
+<div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:10px;">
+  <h1 style="margin:0;font-size:22px;">审计流水</h1>
+  <nav>
+    <a href="/dashboard">仪表盘</a>
+    <a href="/chat">聊天</a>
+    <a href="/audit" class="active">审计</a>
+  </nav>
+</div>
+
+<div class="filter">
+  筛选级别：
+  <button data-level="" class="active">全部</button>
+  <button data-level="read">🟢 只读</button>
+  <button data-level="write">🟡 写入</button>
+  <button data-level="destructive">🔴 破坏</button>
+  <span id="count-info" style="margin-left:8px;color:#6B6558;"></span>
+</div>
+
+<table id="audit-table">
+  <thead><tr>
+    <th>时间</th><th>工具</th><th>级别</th><th>参数</th><th>确认</th><th>结果</th>
+  </tr></thead>
+  <tbody id="audit-body"><tr><td colspan="6" style="text-align:center;color:#6B6558;">加载中…</td></tr></tbody>
+</table>
+
+<script>
+let currentLevel = "";
+
+function levelBadge(lvl) {
+  const map = {read:"🟢 只读", write:"🟡 写入", destructive:"🔴 破坏"};
+  return `<span class="badge b-${lvl}">${map[lvl]||lvl}</span>`;
+}
+
+async function load() {
+  const url = "/api/audit?limit=200" + (currentLevel ? "&level=" + currentLevel : "");
+  try {
+    const r = await fetch(url);
+    const d = await r.json();
+    document.getElementById("count-info").textContent = `共 ${d.count} 条`;
+    if (!d.items?.length) {
+      document.getElementById("audit-body").innerHTML =
+        `<tr><td colspan="6" style="text-align:center;color:#6B6558;">暂无审计记录</td></tr>`;
+      return;
+    }
+    const rows = d.items.map(r => {
+      let args = "—", result = "—";
+      try { args = JSON.stringify(JSON.parse(r.args||"{}")); } catch(e) { args = r.args||"—"; }
+      if (r.error) {
+        result = `<span class="b-err">❌ ${r.error.slice(0,80)}</span>`;
+      } else {
+        try {
+          const parsed = JSON.parse(r.result||"null");
+          result = `<span class="b-ok">✅</span> ` + JSON.stringify(parsed).slice(0,80);
+        } catch(e) { result = `<span class="b-ok">✅</span> ` + (r.result||"").slice(0,80); }
+      }
+      return `<tr>
+        <td style="white-space:nowrap;font-size:11px;color:#6B6558;">${(r.executed_at||"").slice(5,16)}</td>
+        <td><code style="background:rgba(0,0,0,0.05);padding:1px 4px;border-radius:3px;font-size:12px;">${r.tool_name}</code></td>
+        <td>${levelBadge(r.level)}</td>
+        <td style="font-size:11px;max-width:250px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${args}</td>
+        <td>${r.user_confirmed?"✅":"—"}</td>
+        <td style="font-size:11px;max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${result}</td>
+      </tr>`;
+    }).join("");
+    document.getElementById("audit-body").innerHTML = rows;
+  } catch (e) {
+    document.getElementById("audit-body").innerHTML =
+      `<tr><td colspan="6" style="color:#B54848;">加载失败: ${e.message}</td></tr>`;
+  }
+}
+
+document.querySelectorAll(".filter button").forEach(b => {
+  b.onclick = () => {
+    document.querySelectorAll(".filter button").forEach(x => x.classList.remove("active"));
+    b.classList.add("active");
+    currentLevel = b.dataset.level;
+    load();
+  };
+});
+
+load();
+
+if ("serviceWorker" in navigator) navigator.serviceWorker.register("/sw.js").catch(()=>{});
+</script>
+</body>
+</html>

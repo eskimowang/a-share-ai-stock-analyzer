@@ -1,0 +1,363 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"/>
+<title>股票分析 · 仪表盘</title>
+<meta name="theme-color" content="#FAF7F2"/>
+<meta name="apple-mobile-web-app-capable" content="yes"/>
+<link rel="manifest" href="/manifest.webmanifest"/>
+<link rel="apple-touch-icon" href="/apple-touch-icon.png"/>
+<script src="/vendor/tailwind.js"></script>
+<script src="https://cdn.staticfile.org/echarts/5.4.3/echarts.min.js"></script>
+<style>
+  :root {
+    --bg:#FAF7F2; --bg2:#F1ECE3; --border:rgba(120,100,70,0.12);
+    --text:#2C2A26; --muted:#6B6558; --accent:#A8734A; --rise:#B54848; --fall:#4A8060;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#1C1917; --bg2:#26201C; --border:rgba(190,160,120,0.15);
+            --text:#E8DFCE; --muted:#A89878; --accent:#D4A76A; --rise:#D97060; --fall:#7AAB88; }
+  }
+  body { background:var(--bg); color:var(--text); font-family:"Songti SC","SimSun",serif; margin:0; }
+  .card { background:var(--bg2); border:1px solid var(--border); border-radius:10px; padding:14px; }
+  .card h3 { font-size:14px; margin:0 0 10px; color:var(--muted); font-weight:500; letter-spacing:0.5px; }
+  .stat { font-size:28px; font-weight:600; }
+  .pos-row { display:flex; justify-content:space-between; padding:6px 0; border-bottom:1px dashed var(--border); font-size:13px; }
+  .pos-row:last-child { border-bottom:none; }
+  .badge { display:inline-block; padding:2px 8px; border-radius:10px; font-size:11px; margin-right:4px; }
+  .b-run { background:#E6F0E8; color:#4A8060; }
+  .b-wait { background:#F3E6D4; color:#8B5A22; }
+  .b-fail { background:#F7E3DE; color:#8B3939; }
+  .tab { padding:8px 12px; font-size:13px; border-radius:6px; cursor:pointer; color:var(--muted); }
+  .tab.active { background:var(--accent); color:white; }
+  nav a { color:var(--muted); font-size:13px; text-decoration:none; margin-right:12px; }
+  nav a:hover { color:var(--accent); }
+</style>
+</head>
+<body class="min-h-screen">
+<div class="max-w-[1200px] mx-auto p-3 md:p-5">
+
+  <header class="flex items-center justify-between mb-4">
+    <div>
+      <h1 class="text-xl md:text-2xl font-semibold m-0">股票分析 · 仪表盘</h1>
+      <div class="text-xs text-[color:var(--muted)]" id="header-time"></div>
+    </div>
+    <nav>
+      <a href="/chat">聊天</a>
+      <a href="/holdings">持仓变动</a>
+      <a href="/playbook">14 手法复盘</a>
+      <a href="/ai-pk">AI PK</a>
+      <a href="/trading-cognition">交易认知</a>
+      <a href="/analysis-architecture">架构</a>
+      <a href="/audit">审计</a>
+      <a href="/dashboard" class="text-[color:var(--accent)]">仪表盘</a>
+    </nav>
+  </header>
+
+  <!-- 第一行：关键指标 -->
+  <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-3">
+    <div class="card">
+      <h3>持仓总市值</h3>
+      <div class="stat" id="stat-mv">—</div>
+      <div class="text-xs text-[color:var(--muted)]" id="stat-pl">浮盈：计算中…</div>
+    </div>
+    <div class="card">
+      <h3>待执行订单</h3>
+      <div class="stat" id="stat-orders">—</div>
+      <div class="text-xs text-[color:var(--muted)]">pending</div>
+    </div>
+    <div class="card">
+      <h3>纸交易胜率</h3>
+      <div class="stat" id="stat-paperwin">—</div>
+      <div class="text-xs text-[color:var(--muted)]" id="stat-papern">—</div>
+    </div>
+    <div class="card">
+      <h3>回测胜率 (7d)</h3>
+      <div class="stat" id="stat-bt">—</div>
+      <div class="text-xs text-[color:var(--muted)]" id="stat-btn">—</div>
+    </div>
+  </div>
+
+  <!-- AI PK：4 个模拟账户 -->
+  <div class="card mb-3">
+    <div class="flex items-center justify-between gap-2 mb-2">
+      <h3 style="margin:0;">AI PK 模拟盘</h3>
+      <a href="/ai-pk" style="font-size:12px;color:var(--accent);text-decoration:none;">查看详情</a>
+    </div>
+    <div id="ai-pk-summary" class="text-sm">加载中…</div>
+  </div>
+
+  <!-- 第二行：持仓 + 订单 -->
+  <div class="grid grid-cols-1 md:grid-cols-2 gap-3 mb-3">
+    <div class="card">
+      <h3>持仓明细</h3>
+      <div id="positions-list">加载中…</div>
+    </div>
+    <div class="card">
+      <h3>待执行订单（中银证券 app 手工下单）</h3>
+      <div id="orders-list">加载中…</div>
+    </div>
+  </div>
+
+  <!-- 第三行：调度任务 + 推送历史 -->
+  <div class="grid grid-cols-1 md:grid-cols-2 gap-3 mb-3">
+    <div class="card">
+      <h3>定时任务（已注册 9 个）</h3>
+      <div id="jobs-list" class="text-sm leading-7">
+        <div>🌅 08:50 盘前策略 <span class="badge b-run">工作日</span></div>
+        <div>🔆 11:30 午盘小结 <span class="badge b-run">工作日</span></div>
+        <div>🌆 14:45 尾盘决策 <span class="badge b-run">工作日</span></div>
+        <div>⚡ */10min 异动扫描 <span class="badge b-run">盘中</span></div>
+        <div>📊 16:00 复盘引擎 <span class="badge b-run">工作日</span></div>
+        <div>📝 16:10 纸交易平仓 <span class="badge b-run">工作日</span></div>
+        <div>🎯 1/15 08:30 半月度荐股 <span class="badge b-wait">月度</span></div>
+        <div>🔬 每月 5 日 09:00 长期力量跟踪 <span class="badge b-wait">月度</span></div>
+        <div>📈 每周六 10:00 周度回测 <span class="badge b-wait">周</span></div>
+      </div>
+    </div>
+    <div class="card">
+      <h3>近期推送</h3>
+      <div id="notifs-list" class="text-sm">加载中…</div>
+    </div>
+  </div>
+
+  <!-- 第四行：AI 胜率条 + 最新仲裁 -->
+  <div class="grid grid-cols-1 md:grid-cols-2 gap-3 mb-3">
+    <div class="card">
+      <h3>AI 胜率对比</h3>
+      <div id="ai-winrate" style="height:240px;">等数据积累中…</div>
+    </div>
+    <div class="card">
+      <h3>最新荐股矩阵</h3>
+      <div id="latest-discovery" class="text-sm">加载中…</div>
+    </div>
+  </div>
+
+  <!-- 第五行：Web Push 订阅 -->
+  <div class="card mb-3">
+    <h3>📱 Web Push 订阅（直接推到手机锁屏，不走微信）</h3>
+    <div id="push-status" class="text-sm mb-2">检测中…</div>
+    <button id="push-subscribe-btn" style="padding:6px 14px;border-radius:6px;background:var(--accent);color:white;border:none;cursor:pointer;font-size:13px;">订阅推送</button>
+    <button id="push-test-btn" style="padding:6px 14px;border-radius:6px;background:var(--bg);color:var(--text);border:1px solid var(--border);cursor:pointer;font-size:13px;margin-left:6px;">测试推送</button>
+  </div>
+
+</div>
+
+<script>
+document.getElementById("header-time").textContent = new Date().toLocaleString("zh-CN");
+
+function money(n) {
+  if (n == null) return "—";
+  if (Math.abs(n) >= 10000) return (n/10000).toFixed(1) + "万";
+  return n.toFixed(0);
+}
+
+async function loadPositions() {
+  try {
+    const r = await fetch("/api/positions?status=holding");
+    const d = await r.json();
+    let totalMv = 0, totalCost = 0;
+    const lines = [];
+    for (const p of d.items || []) {
+      const qty = p.holding_qty || 0;
+      const cost = p.net_cost || 0;
+      const snap = await (await fetch(`/api/stock/${p.stock_code}/basics`)).json();
+      const cur = snap.realtime?.price || (cost / qty) || 0;
+      const mv = cur * qty;
+      totalMv += mv; totalCost += cost;
+      const plPct = cost ? ((mv - cost) / cost * 100) : 0;
+      const color = plPct >= 0 ? "var(--rise)" : "var(--fall)";
+      lines.push(
+        `<div class="pos-row"><span>${p.stock_code} ${p.stock_name||""}</span>` +
+        `<span style="color:${color}">${plPct>=0?"+":""}${plPct.toFixed(2)}%</span></div>`
+      );
+    }
+    document.getElementById("positions-list").innerHTML = lines.join("") || "无持仓";
+    document.getElementById("stat-mv").textContent = money(totalMv);
+    const pl = totalCost ? ((totalMv-totalCost)/totalCost*100) : 0;
+    document.getElementById("stat-pl").textContent =
+      `浮盈：${pl>=0?"+":""}${pl.toFixed(2)}%`;
+  } catch (e) {
+    document.getElementById("positions-list").innerHTML = "加载失败：" + e.message;
+  }
+}
+
+async function loadOrders() {
+  try {
+    const r = await fetch("/api/orders?status=pending&limit=30");
+    const d = await r.json();
+    document.getElementById("stat-orders").textContent = d.count || 0;
+    if (!d.items?.length) {
+      document.getElementById("orders-list").innerHTML = "暂无待执行订单";
+      return;
+    }
+    const rows = d.items.map(o => {
+      const dir = {buy:"🟢 买", sell:"🔴 卖", hold:"⚪ 持"}[o.direction] || o.direction;
+      const price = o.price_hint ? `@${o.price_hint.toFixed(2)}` : "市价";
+      return `<div class="pos-row"><span>${o.stock_code} ${o.stock_name||""} ${dir} ${o.quantity||"—"}股 ${price}</span>` +
+             `<button onclick="markExecuted(${o.id})" style="font-size:11px;padding:2px 8px;border-radius:4px;background:var(--accent);color:white;border:none;cursor:pointer;">已执行</button></div>`;
+    }).join("");
+    document.getElementById("orders-list").innerHTML = rows;
+  } catch (e) {
+    document.getElementById("orders-list").innerHTML = "加载失败";
+  }
+}
+
+window.markExecuted = async function(id) {
+  await fetch(`/api/orders/${id}/execute`, {method:"POST", headers:{"Content-Type":"application/json"}, body:"{}"});
+  loadOrders();
+};
+
+async function loadPaperStats() {
+  try {
+    const d = await (await fetch("/api/paper/stats")).json();
+    if (d.total > 0) {
+      document.getElementById("stat-paperwin").textContent = (d.win_rate*100).toFixed(0) + "%";
+      document.getElementById("stat-papern").textContent = `${d.wins}/${d.total}  均${(d.avg_pnl_pct).toFixed(1)}%`;
+    } else {
+      document.getElementById("stat-paperwin").textContent = "—";
+      document.getElementById("stat-papern").textContent = d.message || "尚未平仓";
+    }
+  } catch (e) {
+    document.getElementById("stat-paperwin").textContent = "—";
+  }
+}
+
+async function loadBacktest() {
+  try {
+    const d = await (await fetch("/api/backtest/latest")).json();
+    document.getElementById("stat-bt").textContent = ((d.win_rate||0)*100).toFixed(0) + "%";
+    document.getElementById("stat-btn").textContent = `n=${d.total_analyses} 均${((d.avg_return||0)*100).toFixed(1)}%`;
+    renderAIWinrate(d.by_ai || {});
+  } catch (e) {
+    document.getElementById("stat-bt").textContent = "—";
+    document.getElementById("stat-btn").textContent = "尚无回测";
+  }
+}
+
+function renderAIWinrate(byAi) {
+  const entries = Object.entries(byAi).filter(([_,d]) => d.n > 0);
+  if (!entries.length) {
+    document.getElementById("ai-winrate").innerHTML = "<div class='text-sm text-[color:var(--muted)]'>需要至少 1 周数据才能出图。当前 game_analysis_log 在累积中。</div>";
+    return;
+  }
+  const chart = echarts.init(document.getElementById("ai-winrate"));
+  chart.setOption({
+    tooltip: {},
+    xAxis: { type:"category", data: entries.map(([n]) => n) },
+    yAxis: { type:"value", max:1, axisLabel: {formatter:v=>(v*100).toFixed(0)+"%"} },
+    series: [{
+      type:"bar", data: entries.map(([_,d]) => d.win_rate.toFixed(3)),
+      itemStyle:{color:"#A8734A"}, label:{show:true, position:"top", formatter:p=>(p.value*100).toFixed(0)+"%"}
+    }],
+  });
+}
+
+async function loadNotifs() {
+  try {
+    const d = await (await fetch("/api/notifications/recent?limit=6")).json();
+    const rows = (d.items||[]).map(n =>
+      `<div class="pos-row"><span>${(n.sent_at||"").slice(5,16)} · ${n.title}</span>` +
+      `<span style="color:var(--muted);font-size:11px;">${n.status}</span></div>`
+    ).join("");
+    document.getElementById("notifs-list").innerHTML = rows || "暂无";
+  } catch (e) { document.getElementById("notifs-list").innerHTML = "加载失败"; }
+}
+
+async function loadDiscovery() {
+  try {
+    const d = await (await fetch("/api/discovery/latest")).json();
+    const top = (d.matrix?.top_3_picks || []).map(t =>
+      `<div class="pos-row"><span>⭐ ${t.code} ${t.name}</span><span style="font-size:11px;color:var(--muted);">${(t.why||"").slice(0,40)}</span></div>`
+    ).join("");
+    document.getElementById("latest-discovery").innerHTML =
+      `<div class="text-xs text-[color:var(--muted)] mb-2">${d.run_at} · 用时${d.duration_seconds?.toFixed(0)}s</div>` +
+      (d.matrix?.market_stance ? `<div class="text-sm mb-2">${d.matrix.market_stance.slice(0,120)}...</div>` : "") +
+      top;
+  } catch (e) {
+    document.getElementById("latest-discovery").innerHTML = "尚无荐股记录";
+  }
+}
+
+async function loadAiPk() {
+  try {
+    const d = await (await fetch("/api/ai-pk/dashboard")).json();
+    const items = d.contestants || [];
+    if (!items.length) {
+      document.getElementById("ai-pk-summary").innerHTML = "尚未生成模拟盘结果";
+      return;
+    }
+    document.getElementById("ai-pk-summary").innerHTML = items.map(x => {
+      const ret = ((x.total_return || 0) * 100);
+      const day = ((x.daily_return || 0) * 100);
+      const color = ret >= 0 ? "var(--rise)" : "var(--fall)";
+      return `<div class="pos-row"><span>第${x.rank_no} · ${x.contestant} · ${money(x.total_equity)}</span>` +
+             `<span style="color:${color}">${ret>=0?"+":""}${ret.toFixed(2)}% · 今日 ${day>=0?"+":""}${day.toFixed(2)}%</span></div>`;
+    }).join("") + `<div class="text-xs text-[color:var(--muted)] mt-2">比赛日 ${d.trade_date}，每人初始 100 万，按 A 股模拟规则交易。</div>`;
+  } catch (e) {
+    document.getElementById("ai-pk-summary").innerHTML = "加载失败";
+  }
+}
+
+// Web Push
+async function initPush() {
+  const statusEl = document.getElementById("push-status");
+  if (!("serviceWorker" in navigator) || !("PushManager" in window)) {
+    statusEl.textContent = "❌ 浏览器不支持 Push API";
+    document.getElementById("push-subscribe-btn").disabled = true;
+    return;
+  }
+  try {
+    const reg = await navigator.serviceWorker.ready;
+    const sub = await reg.pushManager.getSubscription();
+    statusEl.textContent = sub ? "✅ 已订阅" : "⚪ 未订阅（点击按钮订阅）";
+  } catch (e) {
+    statusEl.textContent = "⚠️ 检测失败: " + e.message;
+  }
+}
+
+function urlB64ToUint8(b64) {
+  const pad = "=".repeat((4 - b64.length % 4) % 4);
+  const s = (b64 + pad).replace(/-/g, "+").replace(/_/g, "/");
+  return Uint8Array.from(atob(s), c => c.charCodeAt(0));
+}
+
+document.getElementById("push-subscribe-btn").onclick = async function() {
+  try {
+    const keyResp = await (await fetch("/api/push/key")).json();
+    const reg = await navigator.serviceWorker.ready;
+    const sub = await reg.pushManager.subscribe({
+      userVisibleOnly: true,
+      applicationServerKey: urlB64ToUint8(keyResp.public_key),
+    });
+    await fetch("/api/push/subscribe", {
+      method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({subscription: sub.toJSON(), user_agent: navigator.userAgent}),
+    });
+    document.getElementById("push-status").textContent = "✅ 订阅成功";
+  } catch (e) {
+    alert("订阅失败: " + e.message);
+  }
+};
+
+document.getElementById("push-test-btn").onclick = async function() {
+  try {
+    const r = await fetch("/api/push/test", {
+      method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({title:"测试推送", body:"如果看到这条，说明 Web Push 工作了 ✅"})
+    });
+    const d = await r.json();
+    alert(`已推送: sent=${d.sent}, failed=${d.failed||0}`);
+  } catch (e) { alert("测试失败: " + e.message); }
+};
+
+loadPositions(); loadOrders(); loadPaperStats(); loadBacktest();
+loadNotifs(); loadDiscovery(); loadAiPk(); initPush();
+
+if ("serviceWorker" in navigator) {
+  navigator.serviceWorker.register("/sw.js").catch(()=>{});
+}
+</script>
+</body>
+</html>

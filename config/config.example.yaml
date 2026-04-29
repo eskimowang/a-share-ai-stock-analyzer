@@ -1,0 +1,45 @@
+app:
+  name: "Stock Analyzer"
+  host: "127.0.0.1"
+  port: 8000
+  log_level: "INFO"
+
+database:
+  path: "./data-cache/stock.db"
+
+data_sources:
+  tushare:
+    token: "${TUSHARE_TOKEN}"
+  akshare:
+    enabled: true
+  baostock:
+    enabled: true
+
+ai:
+  deepseek:
+    api_key: "${DEEPSEEK_API_KEY}"
+    base_url: "https://api.deepseek.com"
+    model: "deepseek-chat"
+  gemini:
+    api_key: "${GEMINI_API_KEY}"
+    model: "gemini-2.5-pro"
+    proxy: ""
+  local_cli:
+    enabled: false
+    endpoint: "http://127.0.0.1:8765"
+    agents: ["codex", "claude", "gemini"]
+
+notification:
+  serverchan:
+    send_key: "${SERVERCHAN_SEND_KEY}"
+
+security:
+  admin_token: "${ADMIN_TOKEN}"
+
+schedule:
+  premarket: "09:00"
+  postmarket: "16:00"
+
+output:
+  html_dir: "./data-cache/reports"
+  public_base_url: "http://localhost:8000"

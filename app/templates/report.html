@@ -1,0 +1,1103 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>{{ name }}（{{ code }}）- 综合分析</title>
+  <script src="https://cdn.jsdelivr.net/npm/echarts@5/dist/echarts.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/dompurify@3/dist/purify.min.js"></script>
+  <style>
+    :root {
+      --bg-primary: #FAF7F2;
+      --bg-secondary: #F1ECE3;
+      --bg-tertiary: #E8E2D5;
+      --border: rgba(120, 100, 70, 0.12);
+      --text-primary: #2C2A26;
+      --text-secondary: #6B6558;
+      --text-tertiary: #9B9588;
+      --accent: #A8734A;
+      --accent-soft: #D4A76A;
+      --rise: #B54848;
+      --fall: #4A8060;
+      --muted: #8B6F47;
+      --shadow: 0 1px 2px rgba(60, 40, 10, 0.04);
+      --radius: 8px;
+      --radius-sm: 6px;
+      --font-serif: "Songti SC", "SimSun", "Noto Serif SC", "Source Han Serif SC", "Times New Roman", "思源宋体", serif;
+      --font-sans: "Inter", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+      --font-mono: "JetBrains Mono", "SF Mono", "Menlo", "Consolas", monospace;
+      --container: 1120px;
+    }
+
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg-primary: #1C1917;
+        --bg-secondary: #26201C;
+        --bg-tertiary: #2F2823;
+        --border: rgba(190, 160, 120, 0.15);
+        --text-primary: #E8DFCE;
+        --text-secondary: #A89878;
+        --text-tertiary: #8A7C66;
+        --accent: #D4A76A;
+        --accent-soft: #B58A56;
+        --rise: #D97060;
+        --fall: #7AAB88;
+        --muted: #B18E60;
+        --shadow: 0 1px 2px rgba(0, 0, 0, 0.18);
+      }
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html, body {
+      margin: 0;
+      padding: 0;
+      background: var(--bg-primary);
+      color: var(--text-primary);
+      font-family: var(--font-serif);
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+    }
+
+    body {
+      line-height: 1.75;
+      font-size: 16px;
+      background-image:
+        linear-gradient(to bottom, rgba(168, 115, 74, 0.025), rgba(168, 115, 74, 0)),
+        repeating-linear-gradient(
+          to bottom,
+          transparent 0,
+          transparent 31px,
+          rgba(120, 100, 70, 0.028) 32px
+        );
+    }
+
+    a {
+      color: inherit;
+      text-decoration: none;
+    }
+
+    .page {
+      max-width: var(--container);
+      margin: 0 auto;
+      padding: 28px 20px 40px;
+    }
+
+    .paper {
+      background: linear-gradient(180deg, rgba(255,255,255,0.16), rgba(255,255,255,0.02));
+      border: 1px solid var(--border);
+      box-shadow: var(--shadow);
+      border-radius: var(--radius);
+      overflow: hidden;
+    }
+
+    .section {
+      padding: 22px 24px;
+      border-top: 1px solid var(--border);
+    }
+
+    .section:first-child {
+      border-top: none;
+    }
+
+    .masthead {
+      padding: 28px 24px 22px;
+      background:
+        linear-gradient(180deg, rgba(212, 167, 106, 0.06), rgba(212, 167, 106, 0)),
+        var(--bg-secondary);
+      border-bottom: 1px solid var(--border);
+    }
+
+    .title {
+      margin: 0;
+      font-family: var(--font-serif);
+      font-size: clamp(30px, 4vw, 42px);
+      line-height: 1.2;
+      font-weight: 700;
+      letter-spacing: 0.02em;
+    }
+
+    .subtitle {
+      margin-top: 12px;
+      padding-top: 10px;
+      border-top: 1px solid var(--border);
+      color: var(--text-secondary);
+      font-size: 14px;
+      letter-spacing: 0.08em;
+    }
+
+    .summary-grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 0;
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      overflow: hidden;
+      background: rgba(255,255,255,0.1);
+    }
+
+    .metric {
+      padding: 16px 18px;
+      border-right: 1px solid var(--border);
+    }
+
+    .metric:last-child {
+      border-right: none;
+    }
+
+    .metric-label {
+      font-family: var(--font-sans);
+      font-size: 12px;
+      color: var(--text-secondary);
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    .metric-value {
+      margin-top: 8px;
+      font-family: var(--font-mono);
+      font-size: 24px;
+      line-height: 1.2;
+      color: var(--text-primary);
+      font-variant-numeric: tabular-nums;
+    }
+
+    .rise {
+      color: var(--rise);
+    }
+
+    .fall {
+      color: var(--fall);
+    }
+
+    .flat {
+      color: var(--muted);
+    }
+
+    .position-row {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      padding: 14px 16px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      background: linear-gradient(180deg, rgba(168,115,74,0.05), rgba(168,115,74,0.02));
+    }
+
+    .seal {
+      flex: 0 0 auto;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 54px;
+      height: 54px;
+      border: 2px solid var(--accent);
+      border-radius: 999px;
+      color: var(--accent);
+      font-family: var(--font-serif);
+      font-weight: 700;
+      letter-spacing: 0.1em;
+      background: rgba(168, 115, 74, 0.04);
+    }
+
+    .position-content {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px 22px;
+      min-width: 0;
+      color: var(--text-secondary);
+    }
+
+    .position-item {
+      font-family: var(--font-sans);
+      font-size: 14px;
+    }
+
+    .position-item strong {
+      color: var(--text-primary);
+      font-family: var(--font-mono);
+      font-weight: 600;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .section-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 14px;
+      padding-bottom: 10px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .section-title {
+      margin: 0;
+      font-family: var(--font-serif);
+      font-size: 23px;
+      font-weight: 700;
+      letter-spacing: 0.02em;
+    }
+
+    .section-note {
+      color: var(--text-tertiary);
+      font-size: 13px;
+      font-family: var(--font-sans);
+    }
+
+    .conclusion-card {
+      padding: 20px 18px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      background: linear-gradient(180deg, rgba(212,167,106,0.05), rgba(212,167,106,0.015));
+      box-shadow: var(--shadow);
+    }
+
+    .prose {
+      font-size: 16px;
+      color: var(--text-primary);
+    }
+
+    .prose > :first-child {
+      margin-top: 0;
+    }
+
+    .prose > :last-child {
+      margin-bottom: 0;
+    }
+
+    .prose p {
+      margin: 0.7em 0;
+      text-indent: 2em;
+    }
+
+    .prose ul,
+    .prose ol {
+      margin: 0.8em 0;
+      padding-left: 1.6em;
+    }
+
+    .prose li {
+      margin: 0.35em 0;
+    }
+
+    .prose blockquote {
+      margin: 1em 0;
+      padding: 0.1em 0 0.1em 1em;
+      border-left: 3px solid var(--accent-soft);
+      color: var(--text-secondary);
+      font-style: italic;
+      text-indent: 0;
+    }
+
+    .prose h1,
+    .prose h2,
+    .prose h3,
+    .prose h4 {
+      margin: 1.1em 0 0.6em;
+      font-family: var(--font-serif);
+      font-weight: 700;
+      line-height: 1.35;
+      text-indent: 0;
+    }
+
+    .prose h1 { font-size: 26px; }
+    .prose h2 { font-size: 22px; }
+    .prose h3 { font-size: 19px; }
+    .prose h4 { font-size: 17px; }
+
+    .prose code {
+      font-family: var(--font-mono);
+      font-size: 0.92em;
+      background: rgba(168, 115, 74, 0.08);
+      padding: 0.12em 0.35em;
+      border-radius: 4px;
+    }
+
+    .prose pre {
+      overflow: auto;
+      padding: 14px 16px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      background: rgba(0, 0, 0, 0.03);
+    }
+
+    .prose pre code {
+      background: none;
+      padding: 0;
+    }
+
+    .chart-wrap {
+      padding: 12px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      background: color-mix(in srgb, var(--bg-secondary) 74%, transparent);
+    }
+
+    .chart {
+      width: 100%;
+      height: 420px;
+    }
+
+    .ai-tabs {
+      display: grid;
+      grid-template-columns: 220px 1fr;
+      gap: 18px;
+    }
+
+    .ai-tab-list {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .ai-tab {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      width: 100%;
+      padding: 12px 14px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      background: transparent;
+      color: var(--text-primary);
+      text-align: left;
+      cursor: pointer;
+      transition: background 0.2s ease, border-color 0.2s ease, color 0.2s ease;
+      font-family: var(--font-sans);
+    }
+
+    .ai-tab:hover {
+      background: rgba(168, 115, 74, 0.05);
+    }
+
+    .ai-tab.active {
+      background: rgba(168, 115, 74, 0.08);
+      border-color: rgba(168, 115, 74, 0.32);
+    }
+
+    .ai-index {
+      width: 26px;
+      height: 26px;
+      border-radius: 999px;
+      border: 1px solid var(--accent);
+      color: var(--accent);
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      font-family: var(--font-mono);
+      font-size: 13px;
+      flex: 0 0 auto;
+    }
+
+    .ai-meta {
+      min-width: 0;
+    }
+
+    .ai-name {
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--text-primary);
+    }
+
+    .ai-stance {
+      margin-top: 2px;
+      font-size: 12px;
+      color: var(--text-secondary);
+    }
+
+    .ai-panel {
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      background: linear-gradient(180deg, rgba(255,255,255,0.08), rgba(255,255,255,0.02));
+      min-height: 280px;
+      overflow: hidden;
+    }
+
+    .ai-panel-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 14px 16px;
+      border-bottom: 1px solid var(--border);
+      background: rgba(168, 115, 74, 0.04);
+    }
+
+    .ai-panel-title {
+      font-family: var(--font-serif);
+      font-size: 20px;
+      font-weight: 700;
+    }
+
+    .ai-panel-badge {
+      padding: 4px 8px;
+      border-radius: 999px;
+      font-family: var(--font-sans);
+      font-size: 12px;
+      border: 1px solid var(--border);
+      color: var(--text-secondary);
+    }
+
+    .ai-panel-body {
+      padding: 16px 18px;
+    }
+
+    .report-list {
+      border-top: 1px solid var(--border);
+    }
+
+    .report-item {
+      display: grid;
+      grid-template-columns: 120px 1fr auto;
+      gap: 16px;
+      padding: 14px 0;
+      border-bottom: 1px solid var(--border);
+      align-items: start;
+    }
+
+    .report-date {
+      font-family: var(--font-mono);
+      font-size: 13px;
+      color: var(--text-secondary);
+      font-variant-numeric: tabular-nums;
+      white-space: nowrap;
+    }
+
+    .report-main {
+      min-width: 0;
+    }
+
+    .report-title {
+      font-size: 18px;
+      font-weight: 700;
+      line-height: 1.45;
+    }
+
+    .report-meta {
+      margin-top: 5px;
+      color: var(--text-secondary);
+      font-family: var(--font-sans);
+      font-size: 13px;
+    }
+
+    .report-rating {
+      text-align: right;
+      font-family: var(--font-sans);
+      font-size: 13px;
+      color: var(--muted);
+      white-space: nowrap;
+    }
+
+    .actions {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 12px;
+    }
+
+    .action-btn {
+      appearance: none;
+      border: 1px solid rgba(168, 115, 74, 0.28);
+      background: linear-gradient(180deg, #E1BE86, #D4A76A);
+      color: #2C2A26;
+      border-radius: 7px;
+      padding: 13px 16px;
+      font-family: var(--font-sans);
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      box-shadow: var(--shadow);
+      transition: transform 0.15s ease, filter 0.2s ease;
+    }
+
+    .action-btn:hover {
+      filter: brightness(1.02);
+      transform: translateY(-1px);
+    }
+
+    .empty {
+      color: var(--text-tertiary);
+      font-family: var(--font-sans);
+      font-size: 14px;
+      padding: 12px 0 2px;
+    }
+
+    .mono {
+      font-family: var(--font-mono);
+      font-variant-numeric: tabular-nums;
+    }
+
+    .muted {
+      color: var(--text-secondary);
+    }
+
+    @media (max-width: 960px) {
+      .summary-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+
+      .metric:nth-child(2) {
+        border-right: none;
+      }
+
+      .metric:nth-child(n + 3) {
+        border-top: 1px solid var(--border);
+      }
+
+      .ai-tabs {
+        grid-template-columns: 1fr;
+      }
+
+      .ai-tab-list {
+        flex-direction: row;
+        overflow: auto;
+      }
+
+      .ai-tab {
+        min-width: 180px;
+      }
+
+      .report-item {
+        grid-template-columns: 1fr;
+        gap: 6px;
+      }
+
+      .report-rating {
+        text-align: left;
+      }
+
+      .actions {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    @media (max-width: 640px) {
+      .page {
+        padding: 16px 12px 26px;
+      }
+
+      .masthead,
+      .section {
+        padding-left: 16px;
+        padding-right: 16px;
+      }
+
+      .summary-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .metric {
+        border-right: none;
+        border-top: 1px solid var(--border);
+      }
+
+      .metric:first-child {
+        border-top: none;
+      }
+
+      .title {
+        font-size: 30px;
+      }
+
+      .chart {
+        height: 320px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <article class="paper">
+      <header class="masthead">
+        <h1 class="title">{{ name }}（{{ code }}）</h1>
+        <div class="subtitle">{{ report_date }} · 综合分析</div>
+      </header>
+
+      <section class="section">
+        <div class="summary-grid">
+          <div class="metric">
+            <div class="metric-label">现价</div>
+            <div class="metric-value">{{ stock.price | default("--") }}</div>
+          </div>
+          <div class="metric">
+            <div class="metric-label">涨跌</div>
+            <div class="metric-value {% if stock.change_pct > 0 %}rise{% elif stock.change_pct < 0 %}fall{% else %}flat{% endif %}">
+              {{ stock.change | default("--") }} / {{ stock.change_pct | default("--") }}%
+            </div>
+          </div>
+          <div class="metric">
+            <div class="metric-label">PE</div>
+            <div class="metric-value">{{ stock.pe | default("--") }}</div>
+          </div>
+          <div class="metric">
+            <div class="metric-label">PB</div>
+            <div class="metric-value">{{ stock.pb | default("--") }}</div>
+          </div>
+        </div>
+      </section>
+
+      {% if position %}
+      <section class="section">
+        <div class="position-row">
+          <div class="seal">持仓</div>
+          <div class="position-content">
+            <div class="position-item">数量 <strong>{{ position.shares | default("--") }}</strong></div>
+            <div class="position-item">成本 <strong>{{ position.cost_price | default("--") }}</strong></div>
+            <div class="position-item">市值 <strong>{{ position.market_value | default("--") }}</strong></div>
+            <div class="position-item">浮盈 <strong class="{% if position.pnl >= 0 %}rise{% else %}fall{% endif %}">{{ position.pnl | default("--") }}</strong></div>
+            <div class="position-item">收益率 <strong class="{% if position.pnl_pct >= 0 %}rise{% else %}fall{% endif %}">{{ position.pnl_pct | default("--") }}%</strong></div>
+          </div>
+        </div>
+      </section>
+      {% endif %}
+
+      <section class="section">
+        <div class="section-head">
+          <h2 class="section-title">※ 综合结论</h2>
+          <div class="section-note">《晨报摘要》</div>
+        </div>
+        <div class="conclusion-card">
+          <div id="consensus" class="prose"></div>
+        </div>
+      </section>
+
+      <section class="section">
+        <div class="section-head">
+          <h2 class="section-title">「K 线图」</h2>
+          <div class="section-note mono">A 股柿红涨 / 松绿跌</div>
+        </div>
+        <div class="chart-wrap">
+          <div id="klineChart" class="chart"></div>
+        </div>
+      </section>
+
+      <section class="section" id="mf-section">
+        <div class="section-head">
+          <h2 class="section-title">〖 资金流向（主力/大单）〗</h2>
+          <div class="section-note mono">正=净流入</div>
+        </div>
+        <div class="chart-wrap"><div id="mfChart" class="chart" style="height:240px;"></div></div>
+      </section>
+
+      <section class="section" id="holder-section">
+        <div class="section-head">
+          <h2 class="section-title">〖 股东户数趋势 〗</h2>
+          <div class="section-note mono">降=筹码集中(主力吸筹)</div>
+        </div>
+        <div class="chart-wrap"><div id="holderChart" class="chart" style="height:220px;"></div></div>
+      </section>
+
+      <section class="section" id="rating-section">
+        <div class="section-head">
+          <h2 class="section-title">〖 研报评级时间轴 〗</h2>
+          <div class="section-note mono">近 30 份</div>
+        </div>
+        <div class="chart-wrap"><div id="ratingChart" class="chart" style="height:220px;"></div></div>
+      </section>
+
+      <section class="section">
+        <div class="section-head">
+          <h2 class="section-title">《四家 AI 分析》</h2>
+          <div class="section-note">切换阅读不同观点</div>
+        </div>
+        <div class="ai-tabs">
+          <div id="aiTabList" class="ai-tab-list"></div>
+          <div class="ai-panel">
+            <div class="ai-panel-head">
+              <div id="aiPanelTitle" class="ai-panel-title"></div>
+              <div id="aiPanelBadge" class="ai-panel-badge"></div>
+            </div>
+            <div id="aiPanelBody" class="ai-panel-body prose"></div>
+          </div>
+        </div>
+      </section>
+
+      <section class="section">
+        <div class="section-head">
+          <h2 class="section-title">※ 研报列表</h2>
+          <div class="section-note">如报纸副刊，按时间铺陈</div>
+        </div>
+        <div class="report-list">
+          {% if reports and reports|length > 0 %}
+            {% for report in reports %}
+            <div class="report-item">
+              <div class="report-date">{{ report.date | default("--") }}</div>
+              <div class="report-main">
+                <div class="report-title">{{ report.title | default("未命名研报") }}</div>
+                <div class="report-meta">
+                  {{ report.broker | default("未知机构") }}
+                  {% if report.analyst %} · {{ report.analyst }}{% endif %}
+                  {% if report.summary %} · {{ report.summary }}{% endif %}
+                </div>
+              </div>
+              <div class="report-rating">
+                {% if report.rating %}{{ report.rating }}{% endif %}
+                {% if report.target_price %}<br><span class="mono">目标价 {{ report.target_price }}</span>{% endif %}
+              </div>
+            </div>
+            {% endfor %}
+          {% else %}
+            <div class="empty">暂无研报记录。</div>
+          {% endif %}
+        </div>
+      </section>
+
+      <section class="section">
+        <div class="section-head">
+          <h2 class="section-title">「操作区」</h2>
+          <div class="section-note">暖金底，墨字呈现</div>
+        </div>
+        <div class="actions">
+          <button class="action-btn" type="button" data-action="watchlist">加入自选</button>
+          <button class="action-btn" type="button" data-action="reanalyze">触发新分析</button>
+          <button class="action-btn" type="button" data-action="trade">录入交易</button>
+        </div>
+      </section>
+    </article>
+  </div>
+
+  <script>
+    const context = {{ context | tojson | safe }};
+
+    const daily = Array.isArray(context.daily) ? context.daily : [];
+    const aiOpinions = context.ai_opinions || {};
+    const aiEntries = Object.entries(aiOpinions);
+
+    function renderMarkdown(targetId, markdownText, indentParagraph = true) {
+      const el = document.getElementById(targetId);
+      if (!el) return;
+      const raw = typeof markdownText === "string" ? markdownText : "";
+      const html = DOMPurify.sanitize(marked.parse(raw));
+      el.innerHTML = html;
+      if (!indentParagraph) {
+        el.querySelectorAll("p").forEach(p => {
+          p.style.textIndent = "0";
+        });
+      }
+    }
+
+    renderMarkdown("consensus", context.consensus || "");
+
+    function normalizeAiEntry(entry, index) {
+      const [key, value] = entry;
+      if (typeof value === "string") {
+        return {
+          key,
+          name: key,
+          stance: "",
+          content: value,
+          score: ""
+        };
+      }
+      return {
+        key,
+        name: value.name || key,
+        stance: value.stance || value.rating || "",
+        content: value.content || value.opinion || value.summary || "",
+        score: value.score || value.confidence || ""
+      };
+    }
+
+    const aiData = aiEntries.map(normalizeAiEntry);
+
+    function setupAiTabs() {
+      const list = document.getElementById("aiTabList");
+      const title = document.getElementById("aiPanelTitle");
+      const badge = document.getElementById("aiPanelBadge");
+      const body = document.getElementById("aiPanelBody");
+
+      if (!list || !title || !badge || !body) return;
+
+      if (!aiData.length) {
+        list.innerHTML = '<div class="empty">暂无 AI 分析数据。</div>';
+        title.textContent = "暂无内容";
+        badge.textContent = "未提供";
+        body.innerHTML = '<p style="text-indent:0">未检测到可展示的 AI 观点。</p>';
+        return;
+      }
+
+      function activate(index) {
+        const current = aiData[index];
+        [...list.querySelectorAll(".ai-tab")].forEach((btn, i) => {
+          btn.classList.toggle("active", i === index);
+        });
+        title.textContent = current.name;
+        badge.textContent = current.stance || current.score || "观点摘要";
+        body.innerHTML = DOMPurify.sanitize(marked.parse(current.content || ""));
+        body.querySelectorAll("p").forEach(p => {
+          p.style.textIndent = "0";
+        });
+      }
+
+      list.innerHTML = "";
+      aiData.forEach((item, index) => {
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = "ai-tab";
+        btn.innerHTML = `
+          <span class="ai-index">${index + 1}</span>
+          <span class="ai-meta">
+            <span class="ai-name">${item.name}</span>
+            <span class="ai-stance">${item.stance || item.score || "点击查看"}</span>
+          </span>
+        `;
+        btn.addEventListener("click", () => activate(index));
+        list.appendChild(btn);
+      });
+
+      activate(0);
+    }
+
+    function initChart() {
+      const chartEl = document.getElementById("klineChart");
+      if (!chartEl || !daily.length) return;
+
+      const chart = echarts.init(chartEl, null, { renderer: "canvas" });
+
+      const dates = daily.map(item => item.date);
+      const values = daily.map(item => [item.open, item.close, item.low, item.high]);
+      const volumes = daily.map(item => item.volume || 0);
+      const ma5 = [];
+      const ma10 = [];
+
+      function calcMA(dayCount, idx) {
+        if (idx < dayCount - 1) return null;
+        let sum = 0;
+        for (let i = 0; i < dayCount; i++) {
+          sum += Number(daily[idx - i].close || 0);
+        }
+        return +(sum / dayCount).toFixed(2);
+      }
+
+      for (let i = 0; i < daily.length; i++) {
+        ma5.push(calcMA(5, i));
+        ma10.push(calcMA(10, i));
+      }
+
+      const option = {
+        backgroundColor: "transparent",
+        animation: false,
+        grid: [
+          { left: 56, right: 24, top: 24, height: "58%" },
+          { left: 56, right: 24, top: "72%", height: "16%" }
+        ],
+        legend: {
+          top: 0,
+          right: 12,
+          textStyle: {
+            color: getComputedStyle(document.documentElement).getPropertyValue("--text-secondary").trim(),
+            fontFamily: '"Inter","PingFang SC",sans-serif'
+          }
+        },
+        tooltip: {
+          trigger: "axis",
+          axisPointer: { type: "cross" },
+          backgroundColor: getComputedStyle(document.documentElement).getPropertyValue("--bg-secondary").trim(),
+          borderColor: getComputedStyle(document.documentElement).getPropertyValue("--border").trim(),
+          textStyle: {
+            color: getComputedStyle(document.documentElement).getPropertyValue("--text-primary").trim(),
+            fontFamily: '"JetBrains Mono","Menlo",monospace'
+          }
+        },
+        xAxis: [
+          {
+            type: "category",
+            data: dates,
+            boundaryGap: true,
+            axisLine: { lineStyle: { color: getComputedStyle(document.documentElement).getPropertyValue("--border").trim() } },
+            axisLabel: {
+              color: getComputedStyle(document.documentElement).getPropertyValue("--text-secondary").trim(),
+              fontFamily: '"JetBrains Mono","Menlo",monospace'
+            },
+            splitLine: { show: false }
+          },
+          {
+            type: "category",
+            gridIndex: 1,
+            data: dates,
+            boundaryGap: true,
+            axisLine: { lineStyle: { color: getComputedStyle(document.documentElement).getPropertyValue("--border").trim() } },
+            axisLabel: { show: false },
+            axisTick: { show: false }
+          }
+        ],
+        yAxis: [
+          {
+            scale: true,
+            splitNumber: 4,
+            axisLine: { show: false },
+            axisLabel: {
+              color: getComputedStyle(document.documentElement).getPropertyValue("--text-secondary").trim(),
+              fontFamily: '"JetBrains Mono","Menlo",monospace'
+            },
+            splitLine: {
+              lineStyle: {
+                color: getComputedStyle(document.documentElement).getPropertyValue("--border").trim(),
+                type: "solid"
+              }
+            }
+          },
+          {
+            gridIndex: 1,
+            splitNumber: 2,
+            axisLine: { show: false },
+            axisLabel: {
+              color: getComputedStyle(document.documentElement).getPropertyValue("--text-secondary").trim(),
+              fontFamily: '"JetBrains Mono","Menlo",monospace'
+            },
+            splitLine: { show: false }
+          }
+        ],
+        dataZoom: [
+          { type: "inside", xAxisIndex: [0, 1], start: 55, end: 100 },
+          {
+            show: true,
+            type: "slider",
+            xAxisIndex: [0, 1],
+            bottom: 10,
+            height: 18,
+            borderColor: "transparent",
+            backgroundColor: getComputedStyle(document.documentElement).getPropertyValue("--bg-tertiary").trim(),
+            fillerColor: "rgba(168,115,74,0.18)",
+            handleStyle: { color: getComputedStyle(document.documentElement).getPropertyValue("--accent").trim() }
+          }
+        ],
+        series: [
+          {
+            name: "日K",
+            type: "candlestick",
+            data: values,
+            itemStyle: {
+              color: getComputedStyle(document.documentElement).getPropertyValue("--rise").trim(),
+              color0: getComputedStyle(document.documentElement).getPropertyValue("--fall").trim(),
+              borderColor: getComputedStyle(document.documentElement).getPropertyValue("--rise").trim(),
+              borderColor0: getComputedStyle(document.documentElement).getPropertyValue("--fall").trim()
+            }
+          },
+          {
+            name: "MA5",
+            type: "line",
+            data: ma5,
+            smooth: true,
+            symbol: "none",
+            lineStyle: { width: 1.5, color: getComputedStyle(document.documentElement).getPropertyValue("--accent").trim() }
+          },
+          {
+            name: "MA10",
+            type: "line",
+            data: ma10,
+            smooth: true,
+            symbol: "none",
+            lineStyle: { width: 1.5, color: getComputedStyle(document.documentElement).getPropertyValue("--muted").trim() }
+          },
+          {
+            name: "成交量",
+            type: "bar",
+            xAxisIndex: 1,
+            yAxisIndex: 1,
+            data: volumes.map((v, i) => ({
+              value: v,
+              itemStyle: {
+                color: Number(daily[i].close) >= Number(daily[i].open)
+                  ? getComputedStyle(document.documentElement).getPropertyValue("--rise").trim()
+                  : getComputedStyle(document.documentElement).getPropertyValue("--fall").trim(),
+                opacity: 0.75
+              }
+            }))
+          }
+        ]
+      };
+
+      chart.setOption(option);
+      window.addEventListener("resize", () => chart.resize());
+    }
+
+    setupAiTabs();
+    initChart();
+
+    // ---------- 新增图表（v2）----------
+    async function loadExtraCharts() {
+      const code = context.code;
+      const axisLabel = { color: getComputedStyle(document.documentElement).getPropertyValue("--text-secondary").trim(), fontSize: 10 };
+      // 资金流 (来自 moneyflow_cache via /api/stock/.../moneyflow ... 实际没这个端点，改读 daily/moneyflow via backend)
+      try {
+        const r = await fetch(`/api/stock/${code}/moneyflow`);
+        if (r.ok) {
+          const mf = await r.json();
+          if (mf.items?.length) {
+            const el = document.getElementById("mfChart");
+            const chart = echarts.init(el);
+            const dates = mf.items.map(x => x.trade_date);
+            const net = mf.items.map(x => Number(x.net_mf_amount) || 0);
+            chart.setOption({
+              tooltip: { trigger: "axis" },
+              grid: { left: 50, right: 16, top: 20, bottom: 30 },
+              xAxis: { type:"category", data:dates, axisLabel, axisLine: {lineStyle:{color:"#ccc"}} },
+              yAxis: { type:"value", axisLabel, splitLine:{show:true, lineStyle:{type:"dashed", opacity:0.3}} },
+              series: [{
+                type:"bar", data:net,
+                itemStyle: { color: (p) => p.value >= 0 ? "#B54848" : "#4A8060" }
+              }]
+            });
+          } else { document.getElementById("mf-section").style.display = "none"; }
+        } else { document.getElementById("mf-section").style.display = "none"; }
+      } catch(e) { document.getElementById("mf-section").style.display = "none"; }
+
+      // 股东户数趋势
+      try {
+        const r = await fetch(`/api/stock/${code}/holder`);
+        if (r.ok) {
+          const d = await r.json();
+          if (d.items?.length >= 2) {
+            const chart = echarts.init(document.getElementById("holderChart"));
+            chart.setOption({
+              tooltip: { trigger: "axis" },
+              grid: { left: 60, right: 16, top: 20, bottom: 30 },
+              xAxis: { type:"category", data: d.items.map(x => x.end_date), axisLabel },
+              yAxis: { type:"value", axisLabel, splitLine:{show:true, lineStyle:{type:"dashed",opacity:0.3}} },
+              series: [{
+                type:"line", smooth:true, data: d.items.map(x => x.holder_num),
+                lineStyle:{color:"#A8734A"}, areaStyle:{color:"rgba(168,115,74,0.12)"},
+                symbolSize:6, itemStyle:{color:"#A8734A"}
+              }]
+            });
+          } else { document.getElementById("holder-section").style.display = "none"; }
+        } else { document.getElementById("holder-section").style.display = "none"; }
+      } catch(e) { document.getElementById("holder-section").style.display = "none"; }
+
+      // 研报评级时间轴
+      try {
+        const r = await fetch(`/api/stock/${code}/reports`);
+        if (r.ok) {
+          const d = await r.json();
+          if (d.items?.length >= 3) {
+            const chart = echarts.init(document.getElementById("ratingChart"));
+            const ratingMap = {"买入":5,"增持":4,"持有":3,"中性":3,"减持":2,"卖出":1};
+            const pts = d.items.filter(x => x.rating && ratingMap[x.rating] !== undefined)
+                          .map(x => [x.report_date, ratingMap[x.rating], x.broker, x.rating]);
+            chart.setOption({
+              tooltip: { formatter: p => `${p.value[0]}<br>${p.value[2]}: ${p.value[3]}` },
+              grid: { left: 60, right: 16, top: 20, bottom: 40 },
+              xAxis: { type:"time", axisLabel },
+              yAxis: { type:"value", min:0, max:6, interval:1, axisLabel: { ...axisLabel, formatter: v => ({1:"卖",2:"减",3:"中",4:"增",5:"买"}[v] || "") } },
+              series: [{ type:"scatter", data:pts, symbolSize:10, itemStyle:{color:"#D4A76A"} }]
+            });
+          } else { document.getElementById("rating-section").style.display = "none"; }
+        } else { document.getElementById("rating-section").style.display = "none"; }
+      } catch(e) { document.getElementById("rating-section").style.display = "none"; }
+    }
+    loadExtraCharts();
+
+    document.querySelectorAll("[data-action]").forEach(btn => {
+      btn.addEventListener("click", () => {
+        const action = btn.getAttribute("data-action");
+        window.dispatchEvent(new CustomEvent("stock-report-action", {
+          detail: { action, code: context.code, name: context.name }
+        }));
+      });
+    });
+  </script>
+</body>
+</html>

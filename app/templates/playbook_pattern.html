@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>手法详情 · 复盘</title>
+<meta name="theme-color" content="#FAF7F2"/>
+<link rel="manifest" href="/manifest.webmanifest"/>
+<script src="/vendor/tailwind.js"></script>
+<script src="https://cdn.staticfile.org/echarts/5.4.3/echarts.min.js"></script>
+<style>
+  :root {
+    --bg:#FAF7F2; --bg2:#F1ECE3; --border:rgba(120,100,70,0.12);
+    --text:#2C2A26; --muted:#6B6558; --accent:#A8734A; --rise:#B54848; --fall:#4A8060;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#1C1917; --bg2:#26201C; --border:rgba(190,160,120,0.15);
+            --text:#E8DFCE; --muted:#A89878; --accent:#D4A76A; --rise:#D97060; --fall:#7AAB88; }
+  }
+  body { background:var(--bg); color:var(--text); font-family:"Songti SC","SimSun",serif; margin:0; }
+  header { padding:16px; border-bottom:1px solid var(--border); }
+  .panel { background:var(--bg2); border:1px solid var(--border); border-radius:10px; padding:16px; }
+  .case-card { background:var(--bg2); border:1px solid var(--border); border-radius:8px; padding:12px; margin-bottom:10px; cursor:pointer; transition:background 0.1s; }
+  .case-card:hover { background:var(--bg); }
+  .case-card.selected { border-color:var(--accent); box-shadow:0 0 0 2px rgba(168,115,74,0.2); }
+  .tag { display:inline-block; padding:2px 8px; border-radius:10px; font-size:11px; margin-right:4px; }
+  .t-win { background:#E6F0E8; color:#4A8060; }
+  .t-loss { background:#F7E3DE; color:#8B3939; }
+  .t-pending { background:#EEE; color:#6B6558; }
+  .t-conf { background:#F3E6D4; color:#8B5A22; }
+  .signal-item { font-family:"JetBrains Mono",monospace; font-size:11px; color:var(--muted); margin:2px 0; }
+  nav a { color:var(--muted); font-size:13px; text-decoration:none; margin-right:12px; }
+  nav a.active { color:var(--accent); }
+  .stat-grid { display:grid; grid-template-columns:repeat(4,1fr); gap:12px; margin-bottom:16px; }
+  .stat-box { background:var(--bg2); padding:12px; border-radius:8px; text-align:center; }
+  .stat-box .label { font-size:11px; color:var(--muted); }
+  .stat-box .value { font-size:22px; font-weight:600; font-family:"JetBrains Mono",monospace; margin-top:2px; }
+</style>
+</head>
+<body>
+<header>
+  <div class="max-w-[1400px] mx-auto flex items-center justify-between">
+    <div>
+      <div style="display:flex;align-items:baseline;gap:10px;">
+        <a href="/playbook" style="color:var(--muted);font-size:13px;text-decoration:none;">← 返回</a>
+        <h1 id="title" class="text-xl font-semibold m-0">加载中…</h1>
+      </div>
+      <div id="definition" class="text-xs text-[color:var(--muted)] mt-1"></div>
+    </div>
+    <nav>
+      <a href="/dashboard">仪表盘</a>
+      <a href="/chat">聊天</a>
+      <a href="/audit">审计</a>
+      <a href="/playbook" class="active">复盘</a>
+    </nav>
+  </div>
+</header>
+
+<div class="max-w-[1400px] mx-auto p-4">
+
+  <div class="stat-grid">
+    <div class="stat-box"><div class="label">历史命中总数</div><div class="value" id="s-total">—</div></div>
+    <div class="stat-box"><div class="label">已验证</div><div class="value" id="s-verified">—</div></div>
+    <div class="stat-box"><div class="label">7日方向准确率</div><div class="value" id="s-wr7">—</div></div>
+    <div class="stat-box"><div class="label">7日平均收益</div><div class="value" id="s-avg7">—</div></div>
+  </div>
+
+  <div class="grid grid-cols-1 lg:grid-cols-5 gap-4">
+    <!-- 左侧案例列表 -->
+    <div class="lg:col-span-2">
+      <div class="text-sm mb-2 text-[color:var(--muted)]">
+        📋 <b id="case-count">—</b> 个案例（按日期倒序）
+      </div>
+      <div id="cases"></div>
+    </div>
+
+    <!-- 右侧当前选中案例的图 -->
+    <div class="lg:col-span-3">
+      <div class="panel">
+        <h3 id="chart-title" style="font-size:15px;margin:0 0 8px;">选左侧案例查看图示</h3>
+        <div id="chart-narrative" class="text-sm" style="color:var(--muted);margin-bottom:10px;"></div>
+        <div id="kline-chart" style="height:320px;"></div>
+        <div id="mf-chart" style="height:150px;margin-top:6px;"></div>
+        <div id="signals-box" style="margin-top:12px;padding:10px;background:var(--bg);border-radius:8px;font-size:12px;"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+const params = new URLSearchParams(location.search);
+const patternName = decodeURIComponent(location.pathname.split("/").pop());
+
+let currentCaseData = null;
+let klineChart = null, mfChart = null;
+
+async function load() {
+  const resp = await fetch(`/api/playbook/pattern/${encodeURIComponent(patternName)}?limit=200`);
+  const data = await resp.json();
+
+  document.getElementById("title").textContent = `${data.meta?.icon || ""} ${patternName}`;
+  document.getElementById("definition").textContent = data.meta?.definition || "";
+
+  const s = data.stats || {};
+  document.getElementById("s-total").textContent = s.total || 0;
+  document.getElementById("s-verified").textContent = s.verified || 0;
+  const wr7 = s.win_rate_7d != null ? (s.win_rate_7d*100).toFixed(0)+"%" : "—";
+  document.getElementById("s-wr7").textContent = wr7;
+  const avg7 = s.avg_7d != null ? (s.avg_7d>=0?"+":"")+s.avg_7d.toFixed(1)+"%" : "—";
+  const avgEl = document.getElementById("s-avg7");
+  avgEl.textContent = avg7;
+  avgEl.style.color = (s.avg_7d||0) >= 0 ? "var(--rise)" : "var(--fall)";
+
+  const cases = data.cases || [];
+  document.getElementById("case-count").textContent = cases.length;
+  const list = document.getElementById("cases");
+  list.innerHTML = "";
+
+  if (!cases.length) {
+    list.innerHTML = `<div class="panel text-sm text-[color:var(--muted)]">尚无历史命中。请去"复盘首页"点"手动扫描历史"。</div>`;
+    return;
+  }
+
+  const bearish = data.meta?.icon === "🔴";
+  for (const c of cases) {
+    const card = document.createElement("div");
+    card.className = "case-card";
+    card.dataset.code = c.stock_code;
+    card.dataset.date = c.trade_date;
+
+    const o7 = c.outcome_7d;
+    let tag = "";
+    if (o7 == null) tag = `<span class="tag t-pending">待验证</span>`;
+    else {
+      const aligned = bearish ? o7 < 0 : o7 > 0;
+      tag = aligned
+        ? `<span class="tag t-win">✓ 方向对 ${o7>=0?"+":""}${o7.toFixed(1)}%</span>`
+        : `<span class="tag t-loss">✗ 方向反 ${o7>=0?"+":""}${o7.toFixed(1)}%</span>`;
+    }
+
+    card.innerHTML = `
+      <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:4px;">
+        <div><b>${c.stock_code}</b> ${c.stock_name||""} · <span style="color:var(--muted);font-size:12px;">${c.trade_date}</span></div>
+        <span class="tag t-conf">置信度 ${(c.confidence*100).toFixed(0)}%</span>
+      </div>
+      <div class="text-xs" style="color:var(--muted);margin-bottom:4px;">${c.narrative || ""}</div>
+      <div>${tag}</div>
+    `;
+    card.onclick = () => selectCase(c, card);
+    list.appendChild(card);
+  }
+
+  // 默认选第一个
+  if (cases.length > 0) {
+    const firstCard = list.firstChild;
+    selectCase(cases[0], firstCard);
+  }
+}
+
+async function selectCase(caseObj, el) {
+  document.querySelectorAll(".case-card").forEach(c => c.classList.remove("selected"));
+  if (el) el.classList.add("selected");
+
+  document.getElementById("chart-title").textContent =
+    `${caseObj.stock_code} ${caseObj.stock_name||""} · ${caseObj.trade_date}`;
+  document.getElementById("chart-narrative").textContent = caseObj.narrative || "";
+
+  // 渲染 signals
+  const sigBox = document.getElementById("signals-box");
+  sigBox.innerHTML = "<b>量化证据:</b><br>";
+  const sigs = caseObj.signals || {};
+  for (const [k, v] of Object.entries(sigs)) {
+    let pretty = v;
+    if (typeof v === "number") {
+      if (Math.abs(v) > 1e6) pretty = (v/1e8).toFixed(2) + " 亿";
+      else if (Math.abs(v) < 1 && v !== 0) pretty = (v*100).toFixed(2) + "%";
+      else pretty = v.toFixed(2);
+    } else if (typeof v === "boolean") {
+      pretty = v ? "✓" : "✗";
+    } else if (Array.isArray(v)) {
+      pretty = v.map(x => typeof x === "number" ? (x*100).toFixed(1)+"%" : x).join(", ");
+    }
+    sigBox.innerHTML += `<div class="signal-item">· ${k}: <b>${pretty}</b></div>`;
+  }
+
+  // 拉 K 线 + 资金流窗口（命中日 ± 45 天）
+  const r = await fetch(`/api/playbook/case?code=${caseObj.stock_code}&date=${caseObj.trade_date}&pattern=${encodeURIComponent(patternName)}`);
+  const d = await r.json();
+  renderKline(d.kline || [], caseObj.trade_date);
+  renderMoneyflow(d.moneyflow || [], caseObj.trade_date);
+}
+
+function renderKline(kline, centerDate) {
+  if (klineChart) klineChart.dispose();
+  klineChart = echarts.init(document.getElementById("kline-chart"));
+  const dates = kline.map(k => k.trade_date);
+  const ohlc = kline.map(k => [k.open, k.close, k.low, k.high]);
+  const volumes = kline.map((k, i) => ({
+    value: k.volume,
+    itemStyle: {
+      color: k.close >= k.open ? "rgba(181,72,72,0.6)" : "rgba(74,128,96,0.6)",
+    },
+  }));
+  klineChart.setOption({
+    animation: false,
+    tooltip: { trigger:"axis", axisPointer:{ type:"cross" } },
+    axisPointer: { link: [{ xAxisIndex: "all" }] },
+    grid: [
+      { left: 50, right: 16, top: 30, height: "60%" },
+      { left: 50, right: 16, top: "72%", height: "20%" },
+    ],
+    xAxis: [
+      { type:"category", data:dates, boundaryGap:false, axisLabel:{fontSize:10} },
+      { type:"category", gridIndex:1, data:dates, axisLabel:{show:false} },
+    ],
+    yAxis: [
+      { scale:true, splitLine:{show:true, lineStyle:{type:"dashed",opacity:0.3}} },
+      { scale:true, gridIndex:1, splitLine:{show:false} },
+    ],
+    series: [
+      {
+        type:"candlestick", data: ohlc,
+        itemStyle: {
+          color: "#B54848", color0: "#4A8060",
+          borderColor: "#B54848", borderColor0: "#4A8060",
+        },
+        markLine: {
+          symbol: "none", silent: true,
+          data: [{ xAxis: centerDate, label: { formatter: "🎯 命中日", color:"#A8734A" }, lineStyle: { color: "#A8734A", width: 2, type: "dashed" } }],
+        },
+      },
+      { type:"bar", xAxisIndex:1, yAxisIndex:1, data:volumes },
+    ],
+  });
+}
+
+function renderMoneyflow(mf, centerDate) {
+  if (mfChart) mfChart.dispose();
+  mfChart = echarts.init(document.getElementById("mf-chart"));
+  const dates = mf.map(x => x.trade_date);
+  const data = mf.map(x => ({
+    value: (x.net_mf_amount || 0) / 1e8,
+    itemStyle: { color: (x.net_mf_amount||0) >= 0 ? "#B54848" : "#4A8060" },
+  }));
+  if (!dates.length) {
+    document.getElementById("mf-chart").innerHTML = "<div style='text-align:center;color:#888;padding:40px;font-size:12px;'>此窗口无资金流数据</div>";
+    return;
+  }
+  mfChart.setOption({
+    animation:false,
+    tooltip: { trigger:"axis", formatter: p => `${p[0].axisValue}<br>净流: ${p[0].value.toFixed(2)} 亿` },
+    grid: { left: 50, right: 16, top: 10, bottom: 24 },
+    xAxis: { type:"category", data:dates, axisLabel:{fontSize:9} },
+    yAxis: { type:"value", name:"亿", nameTextStyle:{fontSize:10}, splitLine:{show:true, lineStyle:{type:"dashed",opacity:0.3}} },
+    series: [{
+      type:"bar", data,
+      markLine: {
+        symbol:"none", silent:true,
+        data: [{ xAxis: centerDate, lineStyle: { color:"#A8734A", width:1.5, type:"dashed" } }],
+      },
+    }],
+  });
+}
+
+load();
+
+if ("serviceWorker" in navigator) navigator.serviceWorker.register("/sw.js").catch(()=>{});
+</script>
+</body>
+</html>

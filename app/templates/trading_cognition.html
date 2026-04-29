@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>交易认知规则库</title>
+<script src="/vendor/tailwind.js"></script>
+<style>
+  :root { --bg:#f7f8fa; --panel:#fff; --line:#d9dee7; --text:#20242c; --muted:#687080; --accent:#1f6feb; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#101216; --panel:#171a20; --line:#2b313b; --text:#e8ecf2; --muted:#98a2b3; --accent:#6aa4ff; }
+  }
+  body { margin:0; background:var(--bg); color:var(--text); font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Microsoft YaHei",sans-serif; }
+  .wrap { max-width:1180px; margin:0 auto; padding:18px; }
+  .panel { background:var(--panel); border:1px solid var(--line); border-radius:8px; padding:14px; }
+  nav a { color:var(--muted); text-decoration:none; margin-left:14px; font-size:13px; }
+  nav a.active, nav a:hover { color:var(--accent); }
+  .muted { color:var(--muted); }
+  .rule { border-bottom:1px solid var(--line); padding:12px 0; }
+  .rule:last-child { border-bottom:0; }
+  .tag { display:inline-block; border:1px solid var(--line); border-radius:999px; padding:2px 8px; font-size:12px; color:var(--muted); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="flex items-center justify-between gap-3 mb-4">
+    <div>
+      <h1 class="text-xl font-semibold m-0">交易认知规则库</h1>
+      <div class="text-xs muted">从桌面“新建文件夹”55张截图蒸馏，供分析、复盘、风控和 AI PK 使用。</div>
+    </div>
+    <nav>
+      <a href="/chat">聊天</a>
+      <a href="/holdings">持仓变动</a>
+      <a href="/playbook">14 手法复盘</a>
+      <a href="/ai-pk">AI PK</a>
+      <a href="/trading-cognition" class="active">交易认知</a>
+      <a href="/analysis-architecture">架构</a>
+      <a href="/dashboard">仪表盘</a>
+    </nav>
+  </header>
+  <section class="panel mb-4">
+    <div class="grid grid-cols-1 md:grid-cols-4 gap-3" id="summary"></div>
+  </section>
+  <section class="panel">
+    <div class="flex items-center justify-between gap-3 mb-3">
+      <h2 class="text-base font-semibold m-0">规则明细</h2>
+      <select id="category" class="border rounded px-2 py-1 bg-transparent text-sm"></select>
+    </div>
+    <div id="rules" class="text-sm">加载中</div>
+  </section>
+</div>
+<script>
+async function loadRules() {
+  const cat = document.getElementById("category").value;
+  const url = "/api/trading-cognition/rules?limit=120" + (cat ? "&category=" + encodeURIComponent(cat) : "");
+  const d = await (await fetch(url)).json();
+  const cats = d.categories || [];
+  const sel = document.getElementById("category");
+  if (!sel.dataset.ready) {
+    sel.innerHTML = `<option value="">全部分类</option>` + cats.map(c => `<option value="${c.category}">${c.category} (${c.count})</option>`).join("");
+    sel.dataset.ready = "1";
+  }
+  document.getElementById("summary").innerHTML = [
+    ["规则数", d.count],
+    ["来源图片", d.source?.evidence_count || 0],
+    ["批次", d.source?.source_batch || ""],
+    ["状态", "已注入分析"]
+  ].map(x => `<div><div class="muted text-xs">${x[0]}</div><div class="text-lg font-semibold">${x[1]}</div></div>`).join("");
+  document.getElementById("rules").innerHTML = (d.items || []).map(r => `
+    <div class="rule">
+      <div class="flex items-center gap-2 mb-1"><span class="tag">${r.category}</span><strong>${r.title}</strong><span class="muted">优先级 ${r.priority}</span></div>
+      <div>${r.rule_text}</div>
+      <div class="muted mt-1">执行检查：${r.operational_check || ""}</div>
+      <div class="muted mt-1">风险底线：${r.risk_guard || ""}</div>
+    </div>
+  `).join("") || "暂无规则";
+}
+document.getElementById("category").onchange = loadRules;
+loadRules();
+</script>
+</body>
+</html>

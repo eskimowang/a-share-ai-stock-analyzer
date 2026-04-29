@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"/>
+<title>14 类手法复盘 · 股票分析</title>
+<meta name="theme-color" content="#FAF7F2"/>
+<link rel="manifest" href="/manifest.webmanifest"/>
+<link rel="apple-touch-icon" href="/apple-touch-icon.png"/>
+<script src="/vendor/tailwind.js"></script>
+<style>
+  :root {
+    --bg:#FAF7F2; --bg2:#F1ECE3; --border:rgba(120,100,70,0.12);
+    --text:#2C2A26; --muted:#6B6558; --accent:#A8734A; --rise:#B54848; --fall:#4A8060;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#1C1917; --bg2:#26201C; --border:rgba(190,160,120,0.15);
+            --text:#E8DFCE; --muted:#A89878; --accent:#D4A76A; --rise:#D97060; --fall:#7AAB88; }
+  }
+  body { background:var(--bg); color:var(--text); font-family:"Songti SC","SimSun",serif; margin:0; }
+  .card { background:var(--bg2); border:1px solid var(--border); border-radius:10px; padding:16px; transition:transform 0.15s; cursor:pointer; }
+  .card:hover { transform:translateY(-2px); box-shadow:0 4px 14px rgba(0,0,0,0.08); }
+  .card h3 { margin:0 0 8px; font-size:17px; font-weight:600; }
+  .card .def { color:var(--muted); font-size:12px; line-height:1.6; margin-bottom:10px; }
+  .card .signal { font-size:11px; color:var(--muted); margin-top:4px; }
+  .stat-row { display:flex; gap:12px; margin-top:10px; padding-top:10px; border-top:1px dashed var(--border); }
+  .stat { flex:1; }
+  .stat-label { font-size:10px; color:var(--muted); }
+  .stat-value { font-size:18px; font-weight:600; font-family:"JetBrains Mono",monospace; }
+  .badge { display:inline-block; padding:2px 6px; border-radius:10px; font-size:10px; margin-right:4px; }
+  .b-bear { background:#F7E3DE; color:#8B3939; }
+  .b-bull { background:#E6F0E8; color:#4A8060; }
+  .b-neutral { background:#F3E6D4; color:#8B5A22; }
+  .b-unavail { background:#EEE; color:#999; }
+  nav a { color:var(--muted); font-size:13px; text-decoration:none; margin-right:12px; }
+  nav a.active { color:var(--accent); }
+  header { padding:16px; border-bottom:1px solid var(--border); }
+</style>
+</head>
+<body>
+<header>
+  <div class="max-w-[1400px] mx-auto flex items-center justify-between">
+    <div>
+      <h1 class="text-xl font-semibold m-0">14 类操作手法 · 量化复盘</h1>
+      <div class="text-xs text-[color:var(--muted)]" id="scan-status">加载中…</div>
+    </div>
+    <nav>
+      <a href="/dashboard">仪表盘</a>
+      <a href="/chat">聊天</a>
+      <a href="/audit">审计</a>
+      <a href="/playbook" class="active">复盘</a>
+      <a href="/interacted-stocks">交流过的股票</a>
+    </nav>
+  </div>
+</header>
+
+<div class="max-w-[1400px] mx-auto p-4">
+  <div style="background:var(--bg2);padding:12px 16px;border-radius:8px;margin-bottom:16px;border-left:4px solid var(--accent);">
+    <div style="font-size:13px;color:var(--muted);line-height:1.6;">
+      系统量化识别 A 股 14 类操盘手法。每个手法独立规则打分（0-1 置信度）。点卡片看具体历史案例、K 线图示、7d/30d 真实收益匹配。
+    </div>
+    <button onclick="triggerScan()" style="margin-top:8px;padding:6px 14px;border-radius:6px;background:var(--accent);color:white;border:none;cursor:pointer;font-size:12px;">
+      手动扫描历史（持仓+自选）
+    </button>
+    <span id="scan-result" style="margin-left:10px;font-size:12px;color:var(--muted);"></span>
+  </div>
+
+  <div id="grid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+    <!-- 14 个卡片 -->
+  </div>
+</div>
+
+<script>
+const BEAR_ICON = "🔴", BULL_ICON = "🟢", NEUTRAL_ICON = "🟡";
+
+async function loadAll() {
+  const patterns = await (await fetch("/api/playbook/patterns")).json();
+  const grid = document.getElementById("grid");
+  grid.innerHTML = "";
+  const names = Object.keys(patterns);
+  const stats = {};
+
+  // 并行拉每个 pattern 的案例统计
+  await Promise.all(names.map(async name => {
+    try {
+      const d = await (await fetch(`/api/playbook/pattern/${encodeURIComponent(name)}?limit=200`)).json();
+      stats[name] = d.stats || {};
+    } catch (e) { stats[name] = {}; }
+  }));
+
+  for (const name of names) {
+    const meta = patterns[name] || {};
+    const s = stats[name] || {};
+    const unavailable = meta.unavailable;
+    const degraded = meta.degraded;
+    const polarity = meta.icon === BEAR_ICON ? "bear" : (meta.icon === BULL_ICON ? "bull" : "neutral");
+
+    const signals = (meta.key_signals || []).map(x => `<div class="signal">· ${x}</div>`).join("");
+    const badges = [];
+    if (meta.icon === BEAR_ICON) badges.push(`<span class="badge b-bear">空方手法</span>`);
+    if (meta.icon === BULL_ICON) badges.push(`<span class="badge b-bull">多方手法</span>`);
+    if (meta.icon === NEUTRAL_ICON) badges.push(`<span class="badge b-neutral">中性</span>`);
+    if (unavailable) badges.push(`<span class="badge b-unavail">数据暂缺</span>`);
+    if (degraded) badges.push(`<span class="badge b-unavail">近似探测</span>`);
+
+    const card = document.createElement("div");
+    card.className = "card";
+    card.onclick = () => location.href = `/playbook/pattern/${encodeURIComponent(name)}`;
+
+    const verified = s.verified || 0;
+    const wr7 = s.win_rate_7d != null ? (s.win_rate_7d*100).toFixed(0)+"%" : "—";
+    const avg7 = s.avg_7d != null ? (s.avg_7d>=0?"+":"")+s.avg_7d.toFixed(1)+"%" : "—";
+
+    card.innerHTML = `
+      <div>${badges.join("")}</div>
+      <h3>${meta.icon || ""} ${name}</h3>
+      <div class="def">${meta.definition || "—"}</div>
+      <div class="signal"><b>识别信号</b>:</div>
+      ${signals}
+      <div class="signal" style="margin-top:6px;"><b>受害者</b>: ${meta.victim || "—"}</div>
+      <div class="stat-row">
+        <div class="stat">
+          <div class="stat-label">历史命中</div>
+          <div class="stat-value">${s.total || 0}</div>
+        </div>
+        <div class="stat">
+          <div class="stat-label">命中后 7d 方向准</div>
+          <div class="stat-value">${wr7}</div>
+        </div>
+        <div class="stat">
+          <div class="stat-label">7d 均收益</div>
+          <div class="stat-value" style="color:${s.avg_7d>=0?'var(--rise)':'var(--fall)'};">${avg7}</div>
+        </div>
+      </div>
+    `;
+    grid.appendChild(card);
+  }
+}
+
+window.triggerScan = async function() {
+  const el = document.getElementById("scan-result");
+  el.textContent = "扫描中（可能需要 30-60 秒）…";
+  try {
+    const d = await (await fetch("/api/playbook/scan", {
+      method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({since_days: 180}),
+    })).json();
+    el.textContent = `✅ 扫描 ${d.stocks_scanned} 只股，新增 ${d.total_detections} 条命中。刷新中…`;
+    setTimeout(()=>location.reload(), 2000);
+  } catch (e) { el.textContent = "❌ " + e.message; }
+};
+
+loadAll();
+
+if ("serviceWorker" in navigator) navigator.serviceWorker.register("/sw.js").catch(()=>{});
+</script>
+</body>
+</html>

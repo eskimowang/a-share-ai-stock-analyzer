@@ -1,0 +1,30 @@
+# Secrets and local config
+config/config.yaml
+.env
+.env.*
+!.env.example
+secrets/
+*.pem
+*.key
+
+# Runtime data
+data-cache/*
+!data-cache/.gitkeep
+logs/
+*.log
+*.db
+*.sqlite
+*.sqlite3
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+venv/
+.venv/
+
+# Local patch/export artifacts
+remote_*.py
+backups/
