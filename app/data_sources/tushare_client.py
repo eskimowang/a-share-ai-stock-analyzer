@@ -1,4 +1,8 @@
 """Tushare Pro 数据源（付费主源，¥200 基础 + ¥500 研报）。"""
+import threading
+import time
+from datetime import datetime
+
 import tushare as ts
 import pandas as pd
 
@@ -12,6 +16,15 @@ def _ts_code(code: str) -> str:
 
 
 class TushareClient:
+    _rt_lock = threading.Lock()
+    _rt_calls = []
+    _rt_cache = {}
+    _rt_limit = 10
+    _rt_window_seconds = 3600
+    _rt_max_wait_seconds = 90
+    _rt_cache_ttl_seconds = 20
+    _rt_block_until = 0
+
     def __init__(self, token: str):
         if not token:
             raise ValueError("Tushare token required")
@@ -37,6 +50,84 @@ class TushareClient:
             ts_code=_ts_code(code), end_date=end or "",
             fields="ts_code,trade_date,close,turnover_rate,pe_ttm,pb,ps_ttm,dv_ratio,total_mv,circ_mv",
         )
+
+    def get_realtime(self, code: str, wait_for_rate_limit: bool = False) -> dict:
+        """Tushare 分钟线实时快照。
+
+        当前账户 rt_min 频率较低（实测 10 次/小时）。默认超过额度直接返回空数据；
+        对午盘/异动这类小批量持仓任务，可短暂等待窗口释放，但不会长时间卡住调度器。
+        """
+        ts_code = _ts_code(code)
+        cache_key = ts_code
+        now = time.time()
+        cached = self._rt_cache.get(cache_key)
+        if cached and now - cached[0] <= self._rt_cache_ttl_seconds:
+            return dict(cached[1])
+
+        self._reserve_rt_slot(wait_for_rate_limit=wait_for_rate_limit)
+        try:
+            df = self.pro.rt_min(ts_code=ts_code, freq="1MIN")
+        except Exception as e:
+            if "频率超限" in str(e):
+                self._block_rt_budget()
+            raise
+        if df is None or df.empty:
+            return {}
+
+        r = df.iloc[0].to_dict()
+        ts = _normalize_rt_time(r.get("time"))
+        result = {
+            "code": ts_code.split(".")[0],
+            "ts_code": ts_code,
+            "name": None,
+            "price": _to_float(r.get("close")),
+            "open": _to_float(r.get("open")),
+            "high": _to_float(r.get("high")),
+            "low": _to_float(r.get("low")),
+            "volume": _to_float(r.get("vol")),
+            "amount": _to_float(r.get("amount")),
+            "timestamp": ts,
+            "_source": "tushare_rt_min",
+        }
+        self._rt_cache[cache_key] = (time.time(), dict(result))
+        return result
+
+    def _reserve_rt_slot(self, wait_for_rate_limit: bool) -> None:
+        while True:
+            cls = type(self)
+            with cls._rt_lock:
+                now = time.time()
+                if now < cls._rt_block_until:
+                    wait_seconds = cls._rt_block_until - now
+                    if not wait_for_rate_limit or wait_seconds > cls._rt_max_wait_seconds:
+                        raise RuntimeError("Tushare rt_min hourly budget exhausted")
+                    sleep_seconds = max(1.0, wait_seconds)
+                else:
+                    sleep_seconds = 0
+                if sleep_seconds:
+                    pass
+                else:
+                    cls._rt_calls = [
+                        t for t in cls._rt_calls if now - t < cls._rt_window_seconds
+                    ]
+                    if len(cls._rt_calls) < cls._rt_limit:
+                        cls._rt_calls.append(now)
+                        return
+                    wait_seconds = cls._rt_window_seconds - (now - cls._rt_calls[0]) + 0.5
+                    if not wait_for_rate_limit:
+                        raise RuntimeError("Tushare rt_min rate budget exhausted")
+                    if wait_seconds > cls._rt_max_wait_seconds:
+                        raise RuntimeError("Tushare rt_min hourly budget exhausted")
+                    sleep_seconds = max(1.0, wait_seconds)
+
+            time.sleep(sleep_seconds)
+
+    def _block_rt_budget(self) -> None:
+        cls = type(self)
+        with cls._rt_lock:
+            now = time.time()
+            cls._rt_block_until = max(cls._rt_block_until, now + cls._rt_window_seconds)
+            cls._rt_calls = [now] * cls._rt_limit
 
     # ========== 基本信息 ==========
     def get_basics(self, code: str) -> dict:
@@ -140,3 +231,21 @@ class TushareClient:
     def is_fund(self, code: str) -> bool:
         """判断是不是 ETF/LOF（通常 5/15/16/501/502/506/508 开头）"""
         return code.startswith(("5", "15", "16"))
+
+
+def _to_float(value):
+    try:
+        if value is None or value == "":
+            return None
+        return float(value)
+    except Exception:
+        return None
+
+
+def _normalize_rt_time(value) -> str:
+    if not value:
+        return ""
+    try:
+        return pd.to_datetime(value).strftime("%Y%m%d%H%M%S")
+    except Exception:
+        return datetime.now().strftime("%Y%m%d%H%M%S")

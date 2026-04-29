@@ -62,58 +62,53 @@ class UnifiedDataSource:
 
         return None, None
 
-    def get_realtime(self, code: str) -> dict:
-        """实时行情。优先腾讯（ECS 能通），失败 fallback AKShare。"""
+    def get_realtime(self, code: str, wait_for_rate_limit: bool = False) -> dict:
+        """实时行情。优先 Tushare rt_min；失败再试 AKShare，不再调用腾讯接口。"""
+        if self.tushare:
+            try:
+                rt = self.tushare.get_realtime(
+                    code, wait_for_rate_limit=wait_for_rate_limit
+                )
+                if rt:
+                    return _enrich_realtime_from_daily(code, rt)
+            except Exception as e:
+                log.warning(f"Tushare realtime fail {code}: {e}")
+
         try:
-            return _fetch_tencent_realtime(code)
-        except Exception as e:
-            log.debug(f"Tencent realtime fail {code}: {e}")
-        try:
-            return self.akshare.get_realtime(code)
+            rt = self.akshare.get_realtime(code)
+            if rt:
+                return _enrich_realtime_from_daily(code, rt)
         except Exception as e:
             log.warning(f"Realtime fail {code}: {e}")
-            return {}
+        return {}
 
 
-def _fetch_tencent_realtime(code: str) -> dict:
-    """腾讯财经免费实时接口 http://qt.gtimg.cn/q=sh600150"""
-    import httpx
-    prefix = "sh" if code.startswith(("6", "9")) else "sz"
-    url = f"http://qt.gtimg.cn/q={prefix}{code}"
-    with httpx.Client(timeout=6) as client:
-        r = client.get(url, headers={"Referer": "https://gu.qq.com/"})
-        r.raise_for_status()
-        text = r.content.decode("gbk", errors="replace")
-    if "=" not in text:
-        raise ValueError(f"invalid response: {text[:80]}")
-    payload = text.split('"', 2)[1] if '"' in text else ""
-    parts = payload.split("~")
-    if len(parts) < 33:
-        raise ValueError(f"parts too few: {len(parts)}")
-    def _f(s):
-        try:
-            return float(s) if s and s.replace('.','').replace('-','').isdigit() else None
-        except Exception:
-            return None
+def _enrich_realtime_from_daily(code: str, rt: dict) -> dict:
+    """Use local daily quote cache to fill prev_close/change_pct."""
+    out = dict(rt or {})
     try:
-        price = _f(parts[3])
-        prev_close = _f(parts[4])
-        # 涨跌幅自算，避开索引偏差
-        change_pct = None
-        if price is not None and prev_close:
-            change_pct = (price - prev_close) / prev_close * 100
-        return {
-            "code": code,
-            "name": parts[1],
-            "price": price,
-            "prev_close": prev_close,
-            "open": _f(parts[5]),
-            "volume": int(parts[6]) * 100 if parts[6] and parts[6].isdigit() else None,
-            "high": _f(parts[33]),
-            "low": _f(parts[34]),
-            "change_pct": change_pct,
-            "timestamp": parts[30] if len(parts) > 30 else None,
-            "_source": "tencent",
-        }
-    except (ValueError, IndexError) as e:
-        raise ValueError(f"parse error: {e}")
+        from ..db import query_one
+
+        snap = query_one(
+            "SELECT close FROM daily_quotes WHERE stock_code=? "
+            "ORDER BY trade_date DESC LIMIT 1",
+            (code,),
+        ) or {}
+        prev_close = _to_float(out.get("prev_close")) or _to_float(snap.get("close"))
+        price = _to_float(out.get("price"))
+        if prev_close:
+            out["prev_close"] = prev_close
+        if price is not None and prev_close and out.get("change_pct") is None:
+            out["change_pct"] = (price - prev_close) / prev_close * 100
+    except Exception as e:
+        log.debug("realtime enrich fail %s: %s", code, e)
+    return out
+
+
+def _to_float(value):
+    try:
+        if value is None or value == "":
+            return None
+        return float(value)
+    except Exception:
+        return None

@@ -53,8 +53,8 @@ def _is_realtime_snapshot_fresh(rt: dict, today: str | None = None) -> bool:
         return False
     today = today or datetime.now().strftime("%Y-%m-%d")
     rt_date = _rt_trade_date(rt)
-    # Tencent snapshots include a timestamp; stale pre-open data must not trigger intraday alerts.
-    if rt.get("_source") == "tencent" and rt_date != today:
+    # Any realtime source with a timestamp must match today's trading date.
+    if rt_date and rt_date != today:
         return False
     return True
 
@@ -314,7 +314,7 @@ def job_midday():
             name = p["stock_name"]
             rt = {}
             try:
-                rt = ds.get_realtime(code) or {}
+                rt = ds.get_realtime(code, wait_for_rate_limit=True) or {}
             except Exception as e:
                 log.warning("[午盘小结] realtime fail %s: %s", code, e)
 
@@ -777,7 +777,7 @@ def job_alert_scan():
                 continue
 
             try:
-                rt_data = ds.get_realtime(code) or {}
+                rt_data = ds.get_realtime(code, wait_for_rate_limit=True) or {}
             except Exception as e:
                 log.warning("[异动扫描] realtime fail %s: %s", code, e)
                 continue
@@ -829,6 +829,5 @@ def job_stop_loss_scan():
               short=f"{len(triggers)} 只触发止损")
     except Exception as e:
         log.exception(f"止损扫描失败: {e}")
-
 
 

@@ -1,4 +1,6 @@
 """AKShare 数据源封装（免费主源）。"""
+from datetime import datetime
+
 import akshare as ak
 import pandas as pd
 
@@ -38,6 +40,8 @@ class AKShareClient:
             "change_pct": r["涨跌幅"], "volume": r["成交量"],
             "amount": r["成交额"], "pe_ttm": r.get("市盈率-动态"),
             "pb": r.get("市净率"), "turnover_rate": r.get("换手率"),
+            "timestamp": datetime.now().strftime("%Y%m%d%H%M%S"),
+            "_source": "akshare_em",
         }
 
     @staticmethod
